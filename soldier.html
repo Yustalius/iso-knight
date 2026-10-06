@@ -1,0 +1,140 @@
+<title>Стрельбище Нокс</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: full-bleed game canvas, HUD panels pinned to the corners. Palette taken from the soldier's own textures. */
+:root{
+  --bg:#20251f; --ink:#e4e0cc; --muted:#a6a891; --panel:rgba(27,31,24,.86);
+  --line:rgba(228,224,204,.15); --brass:#c9a14a; --sage:#b7c49d; --red:#d8604a;
+  --display:"Oswald", "Arial Narrow", Impact, sans-serif;
+  --mono:"IBM Plex Mono", ui-monospace, Consolas, monospace;
+  color-scheme:dark;
+}
+html,body{height:100%;margin:0;overflow:hidden;background:var(--bg);color:var(--ink);font:13px/1.45 var(--mono)}
+#stage{position:fixed;inset:0}
+#stage canvas{width:100%;height:100%;display:block;image-rendering:crisp-edges;image-rendering:pixelated;touch-action:none;outline:none}
+#ret{position:fixed;inset:0;width:100%;height:100%;pointer-events:none}
+.hud{position:fixed;left:16px;top:calc(16px + env(safe-area-inset-top,0px));max-width:min(350px,calc(100vw - 32px));pointer-events:none}
+.hud h1{font:600 30px/1 var(--display);letter-spacing:.08em;text-transform:uppercase;margin:0;text-shadow:0 2px 0 rgba(0,0,0,.6)}
+.sub{margin:5px 0 2px;color:var(--muted);font-size:12px}
+#state{margin:0 0 10px;color:var(--sage);font-size:12px;font-variant-numeric:tabular-nums;min-height:1.45em}
+.keys{pointer-events:auto;background:var(--panel);border:1px solid var(--line);padding:8px 12px}
+.keys summary{cursor:pointer;font:600 14px var(--display);letter-spacing:.1em;text-transform:uppercase;color:var(--brass)}
+.keys dl{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;margin:8px 0 2px;font-size:12px;align-items:center}
+.keys dt{white-space:nowrap;margin:0}
+.keys dd{margin:0;color:var(--muted)}
+.keys p{margin:8px 0 2px;color:var(--muted);font-size:12px}
+kbd{display:inline-block;min-width:1.5em;padding:1px 5px;margin-right:3px;border:1px solid var(--line);border-bottom-width:2px;text-align:center;font:500 11px var(--mono);color:var(--ink);background:rgba(228,224,204,.05)}
+.opts{position:fixed;right:16px;top:calc(16px + env(safe-area-inset-top,0px));width:206px;background:var(--panel);border:1px solid var(--line);padding:8px 12px;font-size:12px}
+.opts[open]{display:grid;gap:8px;padding-bottom:10px}
+.opts summary{cursor:pointer;font:600 14px var(--display);letter-spacing:.1em;text-transform:uppercase;color:var(--brass)}
+.opts:not([open]){width:auto}
+.opts .row{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.opts .lbl{color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-size:10px}
+.opts output{font-variant-numeric:tabular-nums;color:var(--ink)}
+.opts input[type=range]{width:100%;accent-color:var(--sage)}
+.sw{display:flex;gap:6px}
+.sw button{width:30px;height:30px;border:1px solid var(--line);cursor:pointer;padding:0;background:var(--c)}
+.sw button[aria-pressed=true]{outline:2px solid var(--brass);outline-offset:2px}
+.chk{display:flex;gap:8px;align-items:center;cursor:pointer}
+.chk input{accent-color:var(--sage)}
+.ammo{position:fixed;left:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));background:var(--panel);border:1px solid var(--line);padding:9px 12px 8px;min-width:230px;pointer-events:none}
+.ammo .top{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.ammo .wname{font:600 15px var(--display);letter-spacing:.1em;color:var(--brass)}
+.ammo .mode{font:500 11px var(--mono);color:var(--sage);letter-spacing:.06em}
+.ammo .count{font:600 30px/1 var(--display);font-variant-numeric:tabular-nums;letter-spacing:.02em;margin:4px 0 6px}
+.ammo .count small{font-size:15px;color:var(--muted);margin-left:3px}
+.ammo .count .hint{font:500 11px var(--mono);color:var(--red);margin-left:10px;vertical-align:middle}
+.pips{display:grid;grid-template-columns:repeat(30,1fr);gap:2px;height:12px}
+.pips i{display:block;background:var(--brass);border-radius:1px}
+.pips i.spent{background:rgba(228,224,204,.13)}
+.ammo.low .pips i:not(.spent){background:var(--red)}
+.ammo.empty .count{color:var(--red)}
+.stat{margin-top:7px;color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums}
+.pads{position:fixed;right:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));display:none;gap:10px;flex-wrap:wrap;justify-content:flex-end;width:170px}
+.pads button{width:78px;height:62px;border-radius:12px;border:1px solid var(--brass);background:var(--panel);color:var(--ink);font:600 13px var(--display);letter-spacing:.06em;text-transform:uppercase;touch-action:none;user-select:none;-webkit-user-select:none}
+.pads button:active,.pads button.on{background:var(--brass);color:var(--bg)}
+button:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid var(--brass);outline-offset:2px}
+.touch-only{display:none}
+@media (hover:none){ .pads{display:flex} .touch-only{display:block} .desk-only{display:none} }
+@media (max-width:640px){
+  .hud h1{font-size:22px}
+  .opts{width:auto;max-width:200px}
+  .ammo{min-width:0;width:calc(100vw - 32px - 186px);padding:7px 10px}
+  .ammo .count{font-size:22px}
+  .pips{height:9px;gap:1px}
+  .stat{display:none}
+}
+#fx{position:fixed;inset:0;pointer-events:none;overflow:hidden}
+.pop{position:absolute;left:0;top:0;font:600 17px var(--display);letter-spacing:.06em;text-transform:uppercase;color:var(--ink);text-shadow:0 2px 0 #000,0 0 8px rgba(0,0,0,.7);white-space:nowrap;will-change:transform,opacity}
+.pop.crit{color:var(--brass);font-size:22px}
+.pop.small{font-size:13px;color:var(--sage)}
+#boot{position:fixed;inset:0;display:grid;place-items:center;color:var(--muted);font-size:12px;pointer-events:none}
+</style>
+
+<div id="stage"></div>
+<canvas id="ret" aria-hidden="true"></canvas>
+<div id="fx"></div>
+<div id="boot">Собираю стрельбище…</div>
+
+<header class="hud">
+  <h1>Стрельбище Нокс</h1>
+  <p class="sub">изометрия 2:1 · процедурная анимация · стрельба как в Project Zomboid</p>
+  <p id="state" aria-live="off"></p>
+  <details class="keys" id="keys" open>
+    <summary>Управление</summary>
+    <dl class="desk-only">
+      <dt><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></dt><dd>идти</dd>
+      <dt><kbd>Shift</kbd></dt><dd>бежать</dd>
+      <dt><kbd>ПКМ</kbd></dt><dd>целиться: держать, винтовка у плеча, поворот к курсору</dd>
+      <dt><kbd>ЛКМ</kbd></dt><dd>с прицелом — огонь; без прицела — толчок</dd>
+      <dt><kbd>R</kbd></dt><dd>перезарядка</dd>
+      <dt><kbd>X</kbd></dt><dd>режим огня: одиночный / очередь / автомат</dd>
+      <dt><kbd>C</kbd></dt><dd>присесть (точнее, но медленнее)</dd>
+      <dt><kbd>Space</kbd></dt><dd>толчок винтовкой</dd>
+      <dt><kbd>T</kbd></dt><dd>замедление ¼×</dd>
+      <dt><kbd>Q</kbd><kbd>E</kbd></dt><dd>повернуть камеру на 90°</dd>
+      <dt>колесо</dt><dd>масштаб</dd>
+    </dl>
+    <p class="touch-only">Тап по земле — идти. «Прицел» включает прицеливание, тогда касание выбирает точку; «Огонь» — держать.</p>
+    <p>Круг прицела — реальный разброс: сужается, пока стоите и держите прицел. Контур мишени — шанс попасть.</p>
+  </details>
+</header>
+
+<details class="opts" id="opts">
+  <summary>Настройки</summary>
+  <div class="row"><label class="lbl" for="pix">Размер пикселя</label><output id="pixOut">2×</output></div>
+  <input id="pix" type="range" min="1" max="4" step="1" value="2">
+  <span class="lbl">Камуфляж</span>
+  <div class="sw" id="sw">
+    <button type="button" style="--c:linear-gradient(135deg,#6b7450 0 35%,#5a4834 35% 60%,#26261f 60% 72%,#9c8f6c 72%)" data-c="woodland" aria-label="Вудленд M81" aria-pressed="true"></button>
+    <button type="button" style="--c:linear-gradient(135deg,#bba983 0 40%,#9b8564 40% 70%,#6e5c47 70%)" data-c="desert" aria-label="Пустынный" aria-pressed="false"></button>
+    <button type="button" style="--c:#5b5f3d" data-c="olive" aria-label="Олива" aria-pressed="false"></button>
+  </div>
+  <label class="chk"><input id="outline" type="checkbox" checked> Контур целей</label>
+  <label class="chk"><input id="pan" type="checkbox" checked> Камера к прицелу</label>
+  <label class="chk"><input id="sound" type="checkbox" checked> Звук</label>
+  <label class="chk"><input id="slow" type="checkbox"> Замедление ¼×</label>
+  <label class="chk"><input id="snap8" type="checkbox"> 8 направлений, как у спрайтов</label>
+</details>
+
+<section class="ammo" id="ammo" aria-label="Боезапас">
+  <div class="top"><span class="wname">M16A2</span><span class="mode" id="mode">ОДИН.</span></div>
+  <div class="count"><span id="rnd">30</span><small id="chamber">+1</small><span class="hint" id="hint"></span></div>
+  <div class="pips" id="pips"></div>
+  <div class="stat" id="stat"></div>
+</section>
+
+<div class="pads">
+  <button type="button" id="bReload">Перезар.</button>
+  <button type="button" id="bShove">Толчок</button>
+  <button type="button" id="bAim">Прицел</button>
+  <button type="button" id="bFire">Огонь</button>
+</div>
+
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"}}</script>
+<script type="module">
+import('./src/soldier-main.js').then(() => document.getElementById('boot').remove())
+  .catch(e => { document.getElementById('boot').textContent = 'Не удалось загрузить игру: ' + e.message; console.error(e); });
+</script>

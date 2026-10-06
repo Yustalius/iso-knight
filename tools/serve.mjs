@@ -14,11 +14,11 @@ http.createServer(async (req, res) => {
     const file = resolve(root, '.' + decodeURIComponent(url.pathname === '/' ? '/index.html' : url.pathname));
     if (!file.startsWith(root + sep)) { res.writeHead(403); res.end(); return; }
     let data = await readFile(file);
-    if (file.endsWith('index.html')) {
+    if (file.endsWith('.html')) {
       data = skeleton + data + '</body></html>';
       // offline/cloud: serve the vendored three.js instead of the CDN the published artifact uses
       if (!process.env.USE_CDN) data = data.replaceAll('https://cdn.jsdelivr.net/npm/three@0.180.0/', '/vendor/three/');
     }
     res.writeHead(200, { 'Content-Type': types[extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-cache' }); res.end(data);
   } catch { res.writeHead(404); res.end('Not found'); }
-}).listen(port, '127.0.0.1', () => console.log(`Iso knight: http://127.0.0.1:${port}`));
+}).listen(port, '127.0.0.1', () => console.log(`Iso knight: http://127.0.0.1:${port}\nSoldier range: http://127.0.0.1:${port}/soldier.html`));
