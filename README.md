@@ -5,7 +5,7 @@
 - `index.html` — рыцарь во дворе с соломенными чучелами.
 - `soldier.html` — солдат армии США образца 1993 года (как военные в Zomboid) на стрельбище: целиться и стрелять как в PZ.
 
-Опубликованная версия: https://claude.ai/artifact/EFSAWvQ3tujLhjyCWCy7DH (приватная, доступ через Share).
+Опубликованные версии (приватные, доступ через Share): рыцарь — https://claude.ai/artifact/EFSAWvQ3tujLhjyCWCy7DH, солдат — https://claude.ai/artifact/8nZYDCyXb6VxBHCdWZyywk.
 
 ## Запуск
 
