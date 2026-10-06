@@ -1,71 +1,13 @@
 import * as THREE from 'three';
 import { SOLE } from './knight-model.js';
+import { clamp, lerp, smooth, damp, V, curve, Spring, worldRotation, solveLimb, footTarget as footTargetFor, gaitState, stepGait } from './rig-core.js';
 
 // Procedural, speed-driven animation for the knight. Nothing is a canned clip:
 // the gait is derived from the actual local velocity every frame, so feet stay
 // planted at any speed, while strafing, backing up and turning on the spot.
 
-const clamp = THREE.MathUtils.clamp, lerp = THREE.MathUtils.lerp;
-const smooth = x => { x = clamp(x, 0, 1); return x*x*(3-2*x); };
-const damp = (a, b, k, dt) => a + (b-a)*(1-Math.exp(-k*dt));
-const frac = x => x - Math.floor(x);
-const V = (x=0, y=0, z=0) => new THREE.Vector3(x, y, z);
-const hermite = (p0, m0, p1, m1, u) => (2*u**3-3*u*u+1)*p0 + (u**3-2*u*u+u)*m0 + (-2*u**3+3*u*u)*p1 + (u**3-u*u)*m1;
-
-// Non-uniform Hermite through keys [t, ...values]; momentum carries through
-// interior keys, only the first and last keys come to rest.
-function curve(keys, time) {
-  const t = clamp(time, keys[0][0], keys[keys.length-1][0]);
-  let i = 0; while (i < keys.length-2 && t > keys[i+1][0]) i++;
-  const a = keys[i], b = keys[i+1], prev = keys[Math.max(0, i-1)], next = keys[Math.min(keys.length-1, i+2)];
-  const span = b[0]-a[0], u = (t-a[0])/span, out = [];
-  for (let c = 1; c < a.length; c++) {
-    const m0 = i === 0 ? 0 : (b[c]-prev[c])/(b[0]-prev[0]);
-    const m1 = i === keys.length-2 ? 0 : (next[c]-a[c])/(next[0]-a[0]);
-    out.push(hermite(a[c], span*m0, b[c], span*m1, u));
-  }
-  return out;
-}
-
-class Spring {
-  constructor(k, c) { this.k = k; this.c = c; this.x = 0; this.v = 0; }
-  step(target, dt, force = 0) { this.v += (this.k*(target-this.x) - this.c*this.v + force)*dt; this.x += this.v*dt; return this.x; }
-}
-
-const _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _v = V(), _v2 = V();
-function worldRotation(bone, desired) {
-  bone.parent.getWorldQuaternion(_q);
-  bone.quaternion.copy(_q.invert().multiply(desired));
-  bone.updateWorldMatrix(false, true);
-}
-// Two-bone analytic IK (shared with the reference rig): the bend plane passes through `pole`.
-function solveLimb(upper, lower, end, target, pole) {
-  upper.updateWorldMatrix(true, true);
-  const origin = upper.getWorldPosition(V());
-  const upperAxis = lower.position.clone(), lowerAxis = end.position.clone();
-  const a = upperAxis.length(), b = lowerAxis.length();
-  const dir = target.clone().sub(origin);
-  const dist = clamp(dir.length(), Math.abs(a-b) + .001, a + b - .001);
-  dir.normalize();
-  const bend = pole.clone().sub(origin);
-  bend.addScaledVector(dir, -bend.dot(dir)).normalize();
-  const along = (a*a - b*b + dist*dist)/(2*dist), h = Math.sqrt(Math.max(0, a*a - along*along));
-  const elbow = origin.clone().addScaledVector(dir, along).addScaledVector(bend, h);
-  bone_q(upper, upperAxis.normalize(), elbow.clone().sub(origin).normalize());
-  const actual = lower.getWorldPosition(V());
-  bone_q(lower, lowerAxis.normalize(), origin.addScaledVector(dir, dist).sub(actual).normalize());
-}
-function bone_q(bone, restAxis, worldDir) {
-  // rest axis is expressed in the bone's parent frame at rest; rotate it onto worldDir
-  worldRotation(bone, new THREE.Quaternion().setFromUnitVectors(restAxis, worldDir));
-}
-// Ankle placement that pivots the sole about heel (pitch<0) or toe (pitch>0) so the contact stays on the ground.
-function footTarget(x, z, pitch, lift = 0, yaw = 0) {
-  const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(pitch, yaw, 0, 'YXZ'));
-  const pivot = pitch < 0 ? SOLE.heel : SOLE.toe;
-  const c = V(0, SOLE.bottom, pivot).applyQuaternion(q);
-  return { pos: V(x, -c.y + lift, z + pivot - c.z), q };
-}
+const _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _v = V();
+const footTarget = (...a) => footTargetFor(SOLE, ...a);
 
 // Attacks. Wrist and blade paths are authored in character space (+Z forward, sword hand at -X).
 // body: [t, hipsX, hipsDY, hipsZ, pelvisYaw, chestTwist, lean]; feet: [t, shieldFootZ, swordHeelPitch]
@@ -95,12 +37,11 @@ export function createRig(knight) {
   const dirW = v => v.clone().applyQuaternion(rootQ);
 
   const s = {
-    phase: 0, moveW: 0, runW: 0, block: 0, acc: V(), time: 0,
-    footYaw: { L: .14, R: -.1 }, stanceDrive: 0,
+    ...gaitState(), block: 0, acc: V(), time: 0, stanceDrive: 0,
     flapL: new Spring(150, 11), flapR: new Spring(150, 11), flapB: new Spring(110, 8),
     shX: new Spring(170, 10), shZ: new Spring(170, 10), impact: new Spring(260, 18),
     wristPrev: null, wristVel: V(),
-    xf: 1, snap: null, last: null, events: [], wasStance: { L: true, R: true }
+    xf: 1, snap: null, last: null, events: []
   };
   const IDLE_FEET = { L: [.125, .06, .14], R: [-.13, -.035, -.1] };
 
@@ -117,46 +58,13 @@ export function createRig(knight) {
   // input: velLocal (V, m/s), accLocal (V), yawRate, block (bool), attack {def,t} | null, newAttack (bool), impact (bool)
   function update(dt, input) {
     s.time += dt;
-    const vl = input.velLocal, v = Math.hypot(vl.x, vl.z);
+    const vl = input.velLocal;
     s.acc.x = damp(s.acc.x, clamp(input.accLocal.x, -12, 12), 10, dt);
     s.acc.z = damp(s.acc.z, clamp(input.accLocal.z, -12, 12), 10, dt);
     s.block = damp(s.block, input.block ? 1 : 0, 14, dt);
 
-    // ---------- gait parameters from the real velocity ----------
-    const turn = smooth((Math.abs(input.yawRate) - .9)/2.2) * .55;   // turning on the spot shuffles the feet
-    const drive = Math.max(v, turn);
-    s.moveW = damp(s.moveW, clamp(drive/.3, 0, 1), 9, dt);
-    s.runW = damp(s.runW, smooth((v - 1.6)/1.1), 6, dt);
-    const cadence = lerp(.78 + .52*clamp(drive/1.4, 0, 1), 1.48, s.runW);   // gait cycles per second
-    s.phase += cadence*dt;
-    const duty = lerp(.6, .37, s.runW);
-    const travel = Math.min(.78, v/cadence*duty);                         // stance foot slides back exactly at body speed
-    const u = v > 1e-3 ? V(vl.x/v, 0, vl.z/v) : V(0, 0, 1);
-    const fwd = u.z;                                                     // heel–toe roll only when going forward
-    const lift = lerp(.1, .17, s.runW) * clamp(drive/.55, .35, 1);
-    const swingTan = -travel*(1-duty)/duty;
-
-    const gait = {};
-    for (const side of ['L', 'R']) {
-      const p = frac(s.phase + (side === 'L' ? .5 : 0));
-      let o, h = 0, pitch, stance = p < duty;
-      if (stance) {
-        const a = p/duty; o = travel/2 - travel*a;
-        pitch = -.2*(1 - smooth(a/.17)) + .3*smooth((a - .73)/.27);
-      } else {
-        const a = (p - duty)/(1 - duty);
-        o = hermite(-travel/2, swingTan, travel/2, swingTan, a);
-        h = lift*Math.sin(Math.PI*a)**1.25;
-        pitch = curve([[0,.3],[.35,-.1],[.72,-.24],[1,-.2]], a)[0];
-      }
-      // a planted foot keeps its world heading while the body turns; it re-aligns in the air
-      const baseYaw = side === 'L' ? .08 : -.08;
-      if (stance && s.moveW > .2) s.footYaw[side] = clamp(s.footYaw[side] - input.yawRate*dt, baseYaw - .45, baseYaw + .45);
-      else s.footYaw[side] = damp(s.footYaw[side], s.moveW > .2 ? baseYaw : IDLE_FEET[side][2], 10, dt);
-      const bx = side === 'L' ? .122 : -.122;
-      const strike = stance && !s.wasStance[side] && s.moveW > .5; s.wasStance[side] = stance;
-      gait[side] = { strike, x: bx + u.x*o, z: u.z*o, lift: h, pitch: pitch*fwd*clamp(v/.6, 0, 1), o, p, stance, bell: stance ? Math.sin(Math.PI*p/duty) : 0 };
-    }
+    // ---------- gait from the real velocity ----------
+    const { gait, v, u, fwd } = stepGait(s, dt, vl, input.yawRate, IDLE_FEET);
 
     // ---------- attack layer ----------
     let atk = null, atkW = 0;

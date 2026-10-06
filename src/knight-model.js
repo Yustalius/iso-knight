@@ -1,5 +1,7 @@
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { makeRandom, makeMaterial } from './textures.js';
+import { createKit } from './rigid-kit.js';
+export { makeTexture, makeMaterial } from './textures.js';
 
 // Knight geometry and textures. Base mesh taken from the "Последний караул" prototype
 // (reference/gpt-isometric-knight/model.js), mirrored so the sword is in the right hand,
@@ -8,66 +10,10 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 export const SOLE = { bottom: -.0905, heel: -.0765, toe: .1885, halfWidth: .0715 };
 
-function makeRandom(seed) { return () => ((seed = (1664525 * seed + 1013904223) >>> 0) / 4294967296); }
-
-// 64×64 nearest-filtered canvas textures; `paint` is reusable so cloth can be re-dyed.
-export function makeTexture(color, type = 'plain', seed = 1729) {
-  const canvas = document.createElement('canvas'); canvas.width = canvas.height = 64;
-  const ctx = canvas.getContext('2d');
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.magFilter = THREE.NearestFilter; texture.minFilter = THREE.NearestMipmapNearestFilter;
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.paint = c => {
-    const random = makeRandom(seed);
-    ctx.fillStyle = c; ctx.fillRect(0, 0, 64, 64);
-    for (let i = 0; i < 1600; i++) {
-      ctx.fillStyle = random() > .48 ? `rgba(255,240,205,${random()*.13})` : `rgba(15,19,17,${random()*.22})`;
-      ctx.fillRect(Math.floor(random()*64), Math.floor(random()*64), 1 + Math.floor(random()*2), 1);
-    }
-    if (type === 'mail') {
-      for (let y = 0; y < 64; y += 5) for (let x = -4; x < 64; x += 6) {
-        const dx = x + (y % 10 === 0 ? 3 : 0);
-        ctx.fillStyle = '#222928'; ctx.fillRect(dx, y, 5, 4);
-        ctx.fillStyle = '#7d8581'; ctx.fillRect(dx, y, 4, 1); ctx.fillRect(dx, y+1, 1, 2);
-        ctx.fillStyle = '#454c48'; ctx.fillRect(dx+1, y+3, 3, 1);
-      }
-    } else if (type === 'cloth') {
-      ctx.strokeStyle = 'rgba(17,16,12,.2)'; ctx.lineWidth = 1;
-      for (let x = -64; x < 128; x += 8) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x+64, 64); ctx.stroke(); }
-    } else if (type === 'steel') {
-      for (let i = 0; i < 22; i++) { ctx.fillStyle = 'rgba(220,222,198,.24)'; ctx.fillRect(random()*64, random()*64, 1, random()*8+1); }
-      ctx.fillStyle = 'rgba(26,33,30,.18)'; ctx.fillRect(0, 56, 64, 8);
-    } else if (type === 'planks') {
-      for (let y = 0; y < 64; y += 16) { ctx.fillStyle = 'rgba(20,14,8,.55)'; ctx.fillRect(0, y, 64, 1); ctx.fillStyle = 'rgba(255,230,190,.08)'; ctx.fillRect(0, y+1, 64, 1); }
-      for (let i = 0; i < 40; i++) { ctx.fillStyle = 'rgba(30,20,10,.25)'; ctx.fillRect(random()*64, random()*64, random()*14 + 4, 1); }
-      for (let i = 0; i < 8; i++) { ctx.fillStyle = 'rgba(40,40,40,.6)'; ctx.fillRect((random()*64)|0, ((random()*4)|0)*16 + 7, 1, 1); }
-    } else if (type === 'bricks') {
-      ctx.fillStyle = 'rgba(22,24,20,.5)';
-      for (let y = 0; y < 64; y += 16) { ctx.fillRect(0, y, 64, 1); for (let x = (y/16)%2 ? 16 : 0; x < 64; x += 32) ctx.fillRect(x, y, 1, 16); }
-      for (let i = 0; i < 18; i++) { ctx.fillStyle = 'rgba(90,110,60,.35)'; ctx.fillRect(random()*64, random()*64, 2, 1); }
-    } else if (type === 'straw') {
-      for (let i = 0; i < 260; i++) { ctx.fillStyle = random() > .5 ? 'rgba(255,236,170,.3)' : 'rgba(90,70,30,.3)'; ctx.fillRect(random()*64, random()*64, 1, 2 + random()*5); }
-    } else if (type === 'burlap') {
-      for (let y = 0; y < 64; y += 2) { ctx.fillStyle = 'rgba(40,30,15,.18)'; ctx.fillRect(0, y, 64, 1); }
-      for (let x = 0; x < 64; x += 2) { ctx.fillStyle = 'rgba(40,30,15,.12)'; ctx.fillRect(x, 0, 1, 64); }
-    } else if (type === 'leaves') {
-      for (let i = 0; i < 300; i++) { ctx.fillStyle = random() > .55 ? 'rgba(190,210,120,.22)' : 'rgba(10,20,8,.35)'; ctx.fillRect(random()*64, random()*64, 2, 2); }
-    }
-    texture.needsUpdate = true;
-  };
-  texture.paint(color);
-  return texture;
-}
-
-export function makeMaterial(name, color, type = 'plain', metalness = 0, seed) {
-  const map = makeTexture(color, type, seed);
-  return new THREE.MeshStandardMaterial({ name, map, roughness: metalness ? .7 : .96, metalness, flatShading: true });
-}
-
 export function createKnight() {
   const random = makeRandom(1729);
   const root = new THREE.Group(); root.name = 'Knight';
-  const bones = [], joints = {}, pieces = [];
+  const { bones, joint, box, ellipsoid, rings, panel, bake } = createKit(root);
   const m = {
     steel: makeMaterial('Worn iron', '#7f8984', 'steel', .48, 11),
     edge: makeMaterial('Polished edges', '#a7aea1', 'steel', .5, 12),
@@ -79,10 +25,6 @@ export function createKnight() {
     brass: makeMaterial('Aged brass', '#9d8352', 'steel', .35, 18),
     wood: makeMaterial('Oak shield backing', '#6b5539', 'cloth', 0, 19)
   };
-  function joint(name, parent, x, y, z) {
-    const b = new THREE.Bone(); b.name = name; b.position.set(x, y, z); parent.add(b);
-    bones.push(b); joints[name] = b; return b;
-  }
   const hips = joint('Hips', root, 0, .92, 0), spine = joint('Spine', hips, 0, .18, 0);
   const chest = joint('Chest', spine, 0, .20, 0), neck = joint('Neck', chest, 0, .23, 0);
   const head = joint('Head', neck, 0, .07, 0);
@@ -104,37 +46,6 @@ export function createKnight() {
     B: joint('Flap_B', hips, 0, .015, -.168)
   };
 
-  function piece(name, geometry, mat, bone, pos = [0,0,0], rot = [0,0,0]) {
-    const mesh = new THREE.Mesh(geometry, mat); mesh.name = name; mesh.position.set(...pos); mesh.rotation.set(...rot);
-    bone.add(mesh); pieces.push({ mesh, bone }); return mesh;
-  }
-  const box = (name, size, mat, bone, pos, rot) => piece(name, new THREE.BoxGeometry(...size), mat, bone, pos, rot);
-  function ellipsoid(name, radii, mat, bone, pos, segments = 8) {
-    const g = new THREE.SphereGeometry(1, segments, 5); g.scale(...radii); return piece(name, g, mat, bone, pos);
-  }
-  // Chamfered rings keep a human silhouette at small on-screen size.
-  function rings(name, levels, mat, bone, pos = [0,0,0], segments = 8) {
-    const p = [], uv = [], idx = [];
-    levels.forEach(([y, rx, rz, zc = 0], j) => {
-      for (let i = 0; i <= segments; i++) {
-        const a = (i/segments)*Math.PI*2 + Math.PI/8;
-        p.push(Math.cos(a)*rx, y, Math.sin(a)*rz + zc); uv.push(i/segments, j/(levels.length-1));
-      }
-    });
-    for (let j = 0; j < levels.length-1; j++) for (let i = 0; i < segments; i++) {
-      const a = j*(segments+1) + i, b = a + segments + 1; idx.push(a, b, a+1, b, b+1, a+1);
-    }
-    for (let i = 1; i < segments-1; i++) { idx.push(0, i, i+1); const k = (levels.length-1)*(segments+1); idx.push(k, k+i+1, k+i); }
-    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(p, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals();
-    return piece(name, g.toNonIndexed(), mat, bone, pos);
-  }
-  function panel(name, points, depth, mat, bone, pos = [0,0,0], bevel = .007) {
-    const shape = new THREE.Shape(points.map(p => new THREE.Vector2(...p)));
-    const g = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: bevel > 0, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 1, steps: 1, curveSegments: 1 });
-    const p = g.attributes.position, u = g.attributes.uv;
-    for (let i = 0; i < p.count; i++) u.setXY(i, p.getX(i)*1.7 + .5, p.getY(i)*1.7 + .5);
-    return piece(name, g, mat, bone, pos);
-  }
   const rivet = (bone, x, y, z, r = .008) => ellipsoid('Rivet', [r, r, r*.65], m.brass, bone, [x, y, z], 6);
 
   rings('Gambeson', [[0,.16,.105],[.21,.17,.105],[.40,.215,.115],[.46,.19,.10]], m.cloth, hips, [0,-.025,0]);
@@ -217,24 +128,7 @@ export function createKnight() {
   panel('Blade fuller', [[-.007,-.12],[.007,-.12],[.005,-.61],[0,-.685],[-.005,-.61]], .002, m.steel, sword, [0,0,.007], 0);
 
   // Rigid armour: each vertex belongs to one bone; one SkinnedMesh, one draw per material.
-  root.updateMatrixWorld(true);
-  const buckets = new Map();
-  for (const { mesh, bone } of pieces) {
-    const g = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
-    g.applyMatrix4(mesh.matrixWorld);
-    g.deleteAttribute('normal'); g.computeVertexNormals();
-    const count = g.attributes.position.count, ids = new Uint16Array(count*4), weights = new Float32Array(count*4);
-    const bi = bones.indexOf(bone);
-    for (let i = 0; i < count; i++) { ids[i*4] = bi; weights[i*4] = 1; }
-    g.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(ids, 4)); g.setAttribute('skinWeight', new THREE.Float32BufferAttribute(weights, 4));
-    if (!buckets.has(mesh.material)) buckets.set(mesh.material, []);
-    buckets.get(mesh.material).push(g); bone.remove(mesh);
-  }
-  const materials = [...buckets.keys()], merged = materials.map(mat => mergeGeometries(buckets.get(mat)));
-  const geometry = mergeGeometries(merged, true);
-  const skin = new THREE.SkinnedMesh(geometry, materials); skin.name = 'Knight_Armor';
-  skin.castShadow = true; skin.receiveShadow = true; skin.frustumCulled = false;
-  root.add(skin); root.updateMatrixWorld(true); skin.bind(new THREE.Skeleton(bones));
+  const { skin, geometry } = bake('Knight_Armor');
 
   return {
     root, skin, bones, materials: m,

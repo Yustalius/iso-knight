@@ -7,6 +7,11 @@ const out = process.argv[2] || 'shots'; fs.mkdirSync(out, { recursive: true });
   const page = await browser.newPage({ viewport: { width: 1100, height: 760 }, deviceScaleFactor: 1 });
   const errors = []; page.on('pageerror', e => errors.push(e.message)); page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
   page.on('requestfailed', r => errors.push('request failed: ' + r.url()));
+  // Deterministic frames: the game only advances through step(), Math.random is seeded. LIVE=1 keeps the real loop.
+  if (!process.env.LIVE) await page.addInitScript(() => {
+    window.requestAnimationFrame = () => 0;
+    let s = 20240611; Math.random = () => ((s = (1664525*s + 1013904223) >>> 0) / 4294967296);
+  });
   await page.goto('http://127.0.0.1:' + (process.env.PORT || 8777));
   await page.waitForFunction(() => !!window.__knight, { timeout: 60000 }).catch(() => {});
   if (!(await page.evaluate(() => !!window.__knight))) { console.log('NO GAME', errors); await browser.close(); process.exit(1); }
