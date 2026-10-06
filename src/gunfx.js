@@ -137,7 +137,8 @@ export function createFx(scene, world, soldier) {
   function eject(p, dir, carrierVel) {
     const i = ci++ % CASES;
     const v = dir.clone().multiplyScalar(1.5 + R()*.7); v.y += .9 + R()*.5; v.add(carrierVel);
-    const q = new THREE.Quaternion().setFromUnitVectors(V(0, 1, 0), dir.clone().cross(V(0, 1, 0)).normalize().lengthSq() > 0 ? V(dir.z, 0, -dir.x).normalize() : V(1, 0, 0));
+    const ax = V(-dir.z, 0, dir.x); if (ax.lengthSq() < 1e-6) ax.set(1, 0, 0);       // casing lies along the barrel
+    const q = new THREE.Quaternion().setFromUnitVectors(V(0, 1, 0), ax.normalize());
     brass[i] = { p: p.clone(), v, q, w: V((R() - .5)*50, (R() - .5)*30, (R() - .5)*50), awake: true, bounces: 0, rest: 0 };
     cases.count = Math.min(CASES, Math.max(cases.count, i + 1));
   }

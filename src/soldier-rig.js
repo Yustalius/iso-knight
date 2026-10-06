@@ -6,7 +6,7 @@ import { clamp, lerp, smooth, damp, V, curve, Spring, worldRotation, solveLimb, 
 // body is driven by the rifle: its pose is chosen (ready / port arms / shouldered / reload / shove),
 // placed in chest space, then both hands are solved onto its grips with two-bone IK.
 
-const _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _m = new THREE.Matrix4(), _m2 = new THREE.Matrix4();
+const _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion();
 const footTarget = (...a) => footTargetFor(SOLE, ...a);
 const wrapA = a => Math.atan2(Math.sin(a), Math.cos(a));
 const basisQ = (x, y, z) => new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, y, z));
@@ -72,11 +72,11 @@ export function createRig(soldier) {
 
   const s = {
     ...gaitState(), acc: V(), time: 0,
-    aim: 0, crouch: 0, aimYaw: 0, aimPitch: 0, reloadW: 0, meleeW: 0, reloadT: 0,
+    aim: 0, crouch: 0, aimYaw: 0, aimPitch: 0, reloadW: 0, reloadT: 0, pocket: V(-.14, 1.36, 0),
     kickZ: new Spring(420, 30), kickP: new Spring(300, 17), kickY: new Spring(300, 20), shoulder: new Spring(200, 16),
     canteenX: new Spring(90, 5), canteenZ: new Spring(90, 5), strapX: new Spring(60, 3.2), strapZ: new Spring(60, 3.2),
     impact: new Spring(260, 18), headPrev: null, headVel: V(),
-    sling: null, events: [], out: { muzzle: V(), aimDir: V(0, 0, 1), barrel: V(0, 0, 1), eject: V(), ejectDir: V(), magVisible: true }
+    events: [], out: { muzzle: V(), aimDir: V(0, 0, 1), barrel: V(0, 0, 1), eject: V(), ejectDir: V(), magVisible: true }
   };
   const IDLE_FEET = { L: [.125, .05, .16], R: [-.13, -.04, -.12] };
   const AIM_FEET = { L: [.12, .15, -.12], R: [-.15, -.12, -.62] };
@@ -139,10 +139,10 @@ export function createRig(soldier) {
     const { gait, v, u, fwd } = stepGait(s, dt, vl, input.yawRate, FEET, { crouch: cr, width: .115 + .03*cr });
     const mw = s.moveW, rw = s.runW*(1 - aw);
 
-    // aim angles, measured from the shoulder pocket; the rifle can swing ±60° before the body must turn
+    // aim angles, measured from where the butt sat last frame; the rifle can swing ±60° before the body must turn
     let yawT = 0, pitchT = -.03;
     if (input.aimLocal) {
-      const p = input.aimLocal, sx = p.x + .14, sy = p.y - (1.36 - .24*cr), sz = p.z;
+      const p = input.aimLocal, sx = p.x - s.pocket.x, sy = p.y - s.pocket.y, sz = p.z - s.pocket.z;
       yawT = Math.atan2(sx, sz); pitchT = clamp(Math.atan2(sy, Math.hypot(sx, sz)), -.85, .6);
     }
     s.aimYaw += wrapA(clamp(yawT, -1.05, 1.05) - s.aimYaw)*(1 - Math.exp(-22*dt));
@@ -165,7 +165,6 @@ export function createRig(soldier) {
       const r = curve(def.rifle, t), b = curve(def.body, t), f = curve(def.feet, t);
       mel = { butt: V(r[0], r[1], r[2]), dir: V(r[3], r[4], r[5]), up: def.up, hz: b[0], lean: b[1], twist: b[2], fz: f[0] };
     }
-    s.meleeW = mlw;
 
     // ---------- body ----------
     const breath = Math.sin(s.time*2*Math.PI/3.1);
@@ -214,6 +213,7 @@ export function createRig(soldier) {
     ready.q.multiply(_q.setFromEuler(new THREE.Euler(.03*breath*(1 - mw) + .05*bob*20, .06*Math.sin(s.phase*Math.PI*2)*mw, 0)));
     const aimDir = V(Math.sin(s.aimYaw)*Math.cos(s.aimPitch), Math.sin(s.aimPitch), Math.cos(s.aimYaw)*Math.cos(s.aimPitch));
     const aimPose = { butt: chestPoint(POSE.pocket), q: rifleQ(aimDir, V(0, 1, 0)) };
+    s.pocket.copy(aimPose.butt).add(V(0, .04, 0).applyQuaternion(aimPose.q));   // the bore line at the butt
     let pose = blendPose(ready, aimPose, aw);
     if (input.reload) pose = blendPose(pose, poseFromChest(POSE.reload), smooth(s.reloadW));
     if (mel) pose = blendPose(pose, poseFromChest({ butt: mel.butt, dir: mel.dir, up: mel.up }), mlw);

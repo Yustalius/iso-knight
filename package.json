@@ -3,12 +3,11 @@
   "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "Isometric knight prototype in the style of Project Zomboid: three.js, procedural animation",
+  "description": "Isometric knight and soldier prototypes in the style of Project Zomboid: three.js, procedural animation, Zomboid-style aiming",
   "scripts": {
     "start": "node tools/serve.mjs",
     "check": "node --check src/main.js && node --check src/knight-model.js && node --check src/knight-rig.js && node --check src/world.js && node --check src/textures.js && node --check src/rigid-kit.js && node --check src/rig-core.js && node --check src/soldier-main.js && node --check src/soldier-model.js && node --check src/soldier-rig.js && node --check src/range-world.js && node --check src/gunfx.js && node --check src/sfx.js",
-    "shots": "node tools/shots.cjs shots",
-    "shots:soldier": "node tools/shots.cjs shots"
+    "shots": "node tools/shots.cjs shots"
   },
   "devDependencies": {
     "playwright": "^1.55.0"

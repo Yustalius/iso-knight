@@ -18,7 +18,9 @@ html,body{height:100%;margin:0;overflow:hidden;background:var(--bg);color:var(--
 .hud{position:fixed;left:16px;top:calc(16px + env(safe-area-inset-top,0px));max-width:min(350px,calc(100vw - 32px));pointer-events:none}
 .hud h1{font:600 30px/1 var(--display);letter-spacing:.08em;text-transform:uppercase;margin:0;text-shadow:0 2px 0 rgba(0,0,0,.6)}
 .sub{margin:5px 0 2px;color:var(--muted);font-size:12px}
-#state{margin:0 0 10px;color:var(--sage);font-size:12px;font-variant-numeric:tabular-nums;min-height:1.45em}
+#state{margin:0 0 6px;color:var(--sage);font-size:12px;font-variant-numeric:tabular-nums;min-height:1.45em}
+.quick{margin:0 0 8px;color:var(--muted);font-size:11px;line-height:1.9;text-shadow:0 1px 0 rgba(0,0,0,.7)}
+.quick kbd{margin-left:6px}.quick kbd:first-child{margin-left:0}
 .keys{pointer-events:auto;background:var(--panel);border:1px solid var(--line);padding:8px 12px}
 .keys summary{cursor:pointer;font:600 14px var(--display);letter-spacing:.1em;text-transform:uppercase;color:var(--brass)}
 .keys dl{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;margin:8px 0 2px;font-size:12px;align-items:center}
@@ -82,7 +84,8 @@ button:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid
   <h1>Стрельбище Нокс</h1>
   <p class="sub">изометрия 2:1 · процедурная анимация · стрельба как в Project Zomboid</p>
   <p id="state" aria-live="off"></p>
-  <details class="keys" id="keys" open>
+  <p class="quick desk-only"><kbd>ПКМ</kbd>прицел <kbd>ЛКМ</kbd>огонь <kbd>R</kbd>перезарядка <kbd>X</kbd>режим</p>
+  <details class="keys" id="keys">
     <summary>Управление</summary>
     <dl class="desk-only">
       <dt><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></dt><dd>идти</dd>

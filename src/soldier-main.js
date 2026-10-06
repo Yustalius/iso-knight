@@ -101,10 +101,11 @@ let outlined = [];
 function renderOutline() {
   if (!outlined.length) return;
   for (const t of outlined) for (const m of t.meshes) { m.userData.mat0 = m.material; m.material = t.maskMat; }
-  const bg = scene.background; scene.background = null;
+  // only the targets' own subtrees are drawn; the layer keeps their bullet-hole decals out of the mask
   cam.layers.set(OUTLINE_LAYER); renderer.shadowMap.autoUpdate = false;
-  renderer.setRenderTarget(maskRT); renderer.setClearColor(0x000000, 0); renderer.clear(); renderer.render(scene, cam);
-  renderer.setRenderTarget(null); renderer.shadowMap.autoUpdate = true; cam.layers.set(0); scene.background = bg;
+  renderer.setRenderTarget(maskRT); renderer.setClearColor(0x000000, 0); renderer.clear();
+  renderer.autoClear = false; for (const t of outlined) renderer.render(t.group, cam); renderer.autoClear = true;
+  renderer.setRenderTarget(null); renderer.shadowMap.autoUpdate = true; cam.layers.set(0);
   for (const t of outlined) for (const m of t.meshes) m.material = m.userData.mat0;
   renderer.autoClear = false; renderer.render(quadScene, cam); renderer.autoClear = true;
 }
@@ -168,7 +169,8 @@ function doMeleeHit() {
   if (any) { hitstop = .06; impact = true; shake = reduced ? 0 : .05; }
 }
 function startReload() {
-  if (st.reload || st.melee || wpn.mag >= RIFLE.cap) return;
+  if (st.melee) { st.reloadQueued = true; return; }   // after the shove
+  if (st.reload || wpn.mag >= RIFLE.cap) return;
   st.reload = { t: 0, def: RELOAD, empty: !wpn.chamber };
 }
 function cycleMode() { wpn.mode = (wpn.mode + 1) % MODES.length; sfx.click(0); hud(true); }
@@ -184,17 +186,22 @@ function spread() {
   let s = RIFLE.base + (1 - smooth(wpn.focus))*RIFLE.raise + clamp(sp/1.2, 0, 1)*RIFLE.move + clamp(Math.abs(yawRate)/2.5, 0, 1)*RIFLE.turn + wpn.bloom;
   return s*(st.crouch ? .75 : 1);
 }
+// line of fire: straight at the point under the cursor once the barrel points there, else along the barrel
+function fireLine() {
+  const o = rig.state.out;
+  if (aimInfo.ok) { const d = aimPt.clone().sub(o.muzzle).normalize(); if (d.angleTo(o.aimDir) < .07) return d; }
+  return o.aimDir.clone();
+}
 function fire() {
   const o = rig.state.out;
   wpn.chamber = false; if (wpn.mag > 0) { wpn.mag--; wpn.chamber = true; }
-  const d = coneDir(o.aimDir, spread());
+  const d = coneDir(fireLine(), spread());
   fx.fireBullet(o.muzzle, d, onBulletHit);
   fx.muzzleFlash(o.muzzle, o.barrel);
   fx.eject(o.eject, o.ejectDir, st.vel);
   sfx.shot(panOf(o.muzzle));
   wpn.bloom += RIFLE.bloom; wpn.focus = Math.max(0, wpn.focus - .12); wpn.shots++;
   shake = Math.max(shake, reduced ? 0 : .025); shotFlag = true;
-  if (wpn.shots === 1 && !keysTouched) pad('keys').open = false;   // the controls card folds away once you've got the idea
 }
 function onBulletHit(hit, dir) {
   fx.impact(hit, dir);
@@ -230,30 +237,36 @@ addEventListener('blur', () => { for (const k in keys) keys[k] = false; aimHeld 
 const cv = renderer.domElement;
 let touchId = null;
 cv.addEventListener('contextmenu', e => e.preventDefault());
-cv.addEventListener('pointerdown', e => {
+// Mouse buttons use mouse events: with the right button already held, a left press arrives as a
+// chorded pointermove rather than a pointerdown, and "hold RMB, click LMB" is the whole control scheme.
+cv.addEventListener('mousedown', e => {
   cv.focus({ preventScroll: true }); sfx.unlock();
-  if (e.pointerType === 'mouse') {
-    mouse.x = e.clientX; mouse.y = e.clientY; mouse.inside = true;
-    if (e.button === 2) aimHeld = true;
-    if (e.button === 0) { if (aimHeld) { wpn.held = true; wpn.pressed = true; wpn.dryDone = false; } else startMelee(); }
-  } else {
-    touchId = e.pointerId; cv.setPointerCapture(e.pointerId);
-    if (touchAim) { mouse.x = e.clientX; mouse.y = e.clientY; mouse.inside = true; }
-    else { const p = V(); if (groundAt(e.clientX, e.clientY, p)) st.target = p; }
-  }
+  mouse.x = e.clientX; mouse.y = e.clientY; mouse.inside = true;
+  if (e.button === 2) aimHeld = true;
+  if (e.button === 0) { if (aimHeld) { wpn.held = true; wpn.pressed = true; wpn.dryDone = false; } else startMelee(); }
+});
+addEventListener('mouseup', e => { if (e.button === 2) aimHeld = false; if (e.button === 0) wpn.held = false; });
+cv.addEventListener('mousemove', e => {
+  mouse.x = e.clientX; mouse.y = e.clientY; mouse.inside = true;
+  if (!(e.buttons & 2)) aimHeld = false;          // released outside the window
+  if (!(e.buttons & 1)) wpn.held = false;
+});
+cv.addEventListener('pointerdown', e => {
+  if (e.pointerType === 'mouse') return;
+  e.preventDefault();   // no compatibility mouse events after a tap
+  cv.focus({ preventScroll: true }); sfx.unlock();
+  touchId = e.pointerId; cv.setPointerCapture(e.pointerId);
+  if (touchAim) { mouse.x = e.clientX; mouse.y = e.clientY; mouse.inside = true; }
+  else { const p = V(); if (groundAt(e.clientX, e.clientY, p)) st.target = p; }
 });
 cv.addEventListener('pointermove', e => {
-  if (e.pointerType === 'mouse') { mouse.x = e.clientX; mouse.y = e.clientY; mouse.inside = true; }
-  else if (e.pointerId === touchId) {
+  if (e.pointerType !== 'mouse' && e.pointerId === touchId) {
     if (touchAim) { mouse.x = e.clientX; mouse.y = e.clientY; mouse.inside = true; }
     else { const p = V(); if (groundAt(e.clientX, e.clientY, p)) st.target = p; }
   }
 });
 cv.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') mouse.inside = false; });
-addEventListener('pointerup', e => {
-  if (e.pointerType === 'mouse') { if (e.button === 2) aimHeld = false; if (e.button === 0) wpn.held = false; }
-  if (e.pointerId === touchId) touchId = null;
-});
+addEventListener('pointerup', e => { if (e.pointerId === touchId) touchId = null; });
 cv.addEventListener('wheel', e => { e.preventDefault(); zoom = clamp(zoom*(e.deltaY > 0 ? 1.12 : 1/1.12), 3, 15); resize(); }, { passive: false });
 
 const pad = id => document.getElementById(id);
@@ -278,8 +291,6 @@ bindChk('outline', v => { opts.outline = v; });
 bindChk('pan', v => { opts.pan = v; });
 bindChk('sound', v => { sfx.enabled = v; });
 function setSlow(on) { slowmo = on; slowIn.checked = on; }
-if (innerWidth < 640) pad('keys').open = false;
-let keysTouched = false; pad('keys').addEventListener('toggle', e => { if (e.isTrusted) keysTouched = true; });
 const stateEl = pad('state');
 
 // ---------- HUD: ammo, fire mode, score ----------
@@ -420,7 +431,7 @@ function update(rawDt) {
     st.melee.t += dt;
     if (!st.hitDone && st.melee.t >= st.melee.def.hit) { st.hitDone = true; doMeleeHit(); }
     if (st.queued && st.melee.t >= st.melee.def.chain + .15) { st.melee = { def: MELEE.shove, t: 0 }; st.hitDone = false; st.queued = false; newMelee = true; }
-    else if (st.melee.t >= st.melee.def.dur) st.melee = null;
+    else if (st.melee.t >= st.melee.def.dur) { st.melee = null; if (st.reloadQueued) { st.reloadQueued = false; startReload(); } }
   }
   if (st.reload) {
     const r = st.reload, def = r.def, pan = panOf(st.pos);
@@ -483,7 +494,7 @@ function update(rawDt) {
   // ----- hit chance, outline and reticle -----
   outlined = []; retState = null;
   if (aiming && aimInfo.ok) {
-    const o = rig.state.out, half = spread(), d = o.aimDir;
+    const o = rig.state.out, half = spread(), d = fireLine();
     let hover = aimInfo.hit && aimInfo.hit.target, hoverChance = null;
     for (const t of world.targets) {
       const ch = hitChance(t, o.muzzle, d, half);
@@ -550,14 +561,15 @@ window.__game = {
   view(yawDeg, z = zoom) { camYaw = camYawT = yawDeg*Math.PI/180; zoom = z; resize(); placeCamera(focus); render(); },
   place(x, z, yawDeg) { st.pos.set(x, 0, z); st.vel.set(0, 0, 0); st.yaw = st.yawT = yawDeg*Math.PI/180; focus.set(x, .9, z); },
   render,
+  screen(x, y, z) { const v = V(x, y, z).project(cam), r = cv.getBoundingClientRect(); return [r.left + (v.x + 1)/2*r.width, r.top + (1 - v.y)/2*r.height]; },
   // aim line and what it hits, plus every target's hit chance, for numeric checks
   probe() {
-    const o = rig.state.out, h = world.trace(o.muzzle, o.aimDir, 200), half = spread();
-    return { muzzle: o.muzzle.toArray().map(v => +v.toFixed(3)), dir: o.aimDir.toArray().map(v => +v.toFixed(3)), spreadDeg: +(half*180/Math.PI).toFixed(2),
-      hit: h && { t: +h.t.toFixed(2), kind: h.kind, target: h.target && h.target.type, point: h.point.toArray().map(v => +v.toFixed(2)) },
-      chances: world.targets.map(t => +hitChance(t, o.muzzle, o.aimDir, half).toFixed(2)) };
+    const o = rig.state.out, d = fireLine(), h = world.trace(o.muzzle, d, 200), half = spread();
+    return { muzzle: o.muzzle.toArray().map(v => +v.toFixed(3)), dir: d.toArray().map(v => +v.toFixed(3)), barrelErrDeg: +(d.angleTo(o.aimDir)*180/Math.PI).toFixed(2), spreadDeg: +(half*180/Math.PI).toFixed(2),
+      hit: h && { t: +h.t.toFixed(2), kind: h.kind, target: h.target && h.target.type, zone: h.zone, point: h.point.toArray().map(v => +v.toFixed(2)) },
+      chances: world.targets.map(t => +hitChance(t, o.muzzle, d, half).toFixed(2)) };
   },
   get state() { return { pos: st.pos.toArray(), yaw: st.yaw, aim: rig.state.aim, mag: wpn.mag, chamber: wpn.chamber, shots: wpn.shots, hits: wpn.hits, reload: st.reload && st.reload.t, melee: st.melee && st.melee.def.name }; },
   stats: { triangles: soldier.triangles },
-  scene
+  scene, sfx
 };

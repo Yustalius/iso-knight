@@ -43,6 +43,7 @@ export function createSfx() {
   return {
     unlock,
     set enabled(v) { enabled = v; }, get enabled() { return enabled; },
+    get state() { return ctx ? ctx.state : 'none'; },
     shot(pan = 0) {
       if (!ready()) return; const t = ctx.currentTime, b = bus(pan, .9, .55);
       burst(b, t, { type: 'highpass', f: 2600, q: .5, a: .0008, d: .03, g: 1.1 });               // supersonic crack

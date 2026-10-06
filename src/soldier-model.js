@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { makeMaterial, makeTexture, CAMO } from './textures.js';
+import { makeMaterial, CAMO } from './textures.js';
 import { createKit } from './rigid-kit.js';
 
 // A 1993 U.S. Army rifleman, the soldier of Project Zomboid's Knox Event: M81 woodland BDU with
@@ -266,4 +266,3 @@ export function magazineMesh(materials) {
   for (const x of meshes) { x.castShadow = true; g.add(x); }
   return g;
 }
-export { makeTexture };

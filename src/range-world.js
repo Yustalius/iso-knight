@@ -126,7 +126,7 @@ export function buildRange(scene) {
   })();
   function barrier(x, z, yaw) {
     const b = solid(mesh(barrierGeo, M.concrete, x, 0, z), 'concrete'); b.rotation.y = yaw;
-    for (const s of [-1, 1]) { const h = mesh(new THREE.BoxGeometry(.62, .05, .1), M.dark || M.pipe, 0, .06, s*.9, b); h.castShadow = false; }
+    for (const s of [-1, 1]) { const h = mesh(new THREE.BoxGeometry(.62, .05, .1), M.pipe, 0, .06, s*.9, b); h.castShadow = false; }
     const c = Math.cos(yaw), sn = Math.sin(yaw); seg(x - sn*1.3, z - c*1.3, x + sn*1.3, z + c*1.3, .3);
   }
   barrier(-4.6, 6.6, Math.PI/2); barrier(-1.9, 6.6, Math.PI/2); barrier(2.4, 6.6, Math.PI/2); barrier(5.1, 6.6, Math.PI/2);
