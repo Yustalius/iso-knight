@@ -1,0 +1,19 @@
+{
+  "bytes": 995532,
+  "skins": 9,
+  "animations": [
+    {
+      "name": "Idle",
+      "duration": 2.4000000953674316
+    },
+    {
+      "name": "Walk",
+      "duration": 1.159999966621399
+    },
+    {
+      "name": "Attack",
+      "duration": 1.7999999523162842
+    }
+  ],
+  "maxBoneError": 0.0017252229172191403
+}

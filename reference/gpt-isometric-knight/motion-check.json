@@ -1,0 +1,36 @@
+{
+  "Idle": {
+    "lowestSole": -2.0816681711721685e-16,
+    "maxPlantedSoleError": 3.0531133177191805e-16,
+    "maxFootTargetError": 3.065703529144609e-16,
+    "maxWristTargetError": 2.9893669801409083e-16,
+    "highestSwingFoot": 3.0531133177191805e-16,
+    "maxKneeBackward": 0,
+    "maxWristAngularSpeed": 0.011737576098647118,
+    "loopTipError": 0,
+    "loopFeetError": 0
+  },
+  "Walk": {
+    "lowestSole": -3.0531133177191805e-16,
+    "maxPlantedSoleError": 3.0531133177191805e-16,
+    "maxFootTargetError": 3.1401849173675503e-16,
+    "maxWristTargetError": 3.7341307954279784e-16,
+    "highestSwingFoot": 0.1120000000000001,
+    "maxKneeBackward": 0,
+    "maxWristAngularSpeed": 1.5664772952390404,
+    "plantedForwardDrift": 5.551115123125783e-17,
+    "loopTipError": 0,
+    "loopFeetError": 0
+  },
+  "Attack": {
+    "lowestSole": -2.636779683484747e-16,
+    "maxPlantedSoleError": 3.0531133177191805e-16,
+    "maxFootTargetError": 3.3537189618722464e-16,
+    "maxWristTargetError": 3.7238012298709097e-16,
+    "highestSwingFoot": 0.04800000000000011,
+    "maxKneeBackward": 0,
+    "maxWristAngularSpeed": 19.67764056962547,
+    "loopTipError": 0,
+    "loopFeetError": 0
+  }
+}

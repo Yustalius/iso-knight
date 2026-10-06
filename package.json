@@ -1,0 +1,15 @@
+{
+  "name": "iso-knight",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Isometric knight prototype in the style of Project Zomboid: three.js, procedural animation",
+  "scripts": {
+    "start": "node tools/serve.mjs",
+    "check": "node --check src/main.js && node --check src/knight-model.js && node --check src/knight-rig.js && node --check src/world.js",
+    "shots": "node tools/shots.cjs shots"
+  },
+  "devDependencies": {
+    "playwright": "^1.55.0"
+  }
+}

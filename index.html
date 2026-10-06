@@ -1,0 +1,102 @@
+<title>Изометрический рыцарь</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alegreya+SC:wght@500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: full-bleed game canvas, HUD panels pinned to the corners. Palette taken from the knight's own textures. */
+:root{
+  --bg:#222823; --ink:#e3e2d0; --muted:#a5ab95; --panel:rgba(28,33,29,.86);
+  --line:rgba(227,226,208,.15); --brass:#c2a466; --sage:#b7c49d;
+  --display:"Alegreya SC", Georgia, "Times New Roman", serif;
+  --mono:"IBM Plex Mono", ui-monospace, Consolas, monospace;
+  color-scheme:dark;
+}
+html,body{height:100%;margin:0;overflow:hidden;background:var(--bg);color:var(--ink);font:13px/1.45 var(--mono)}
+#stage{position:fixed;inset:0}
+#stage canvas{width:100%;height:100%;display:block;image-rendering:crisp-edges;image-rendering:pixelated;touch-action:none;outline:none}
+.hud{position:fixed;left:16px;top:calc(16px + env(safe-area-inset-top,0px));max-width:min(340px,calc(100vw - 32px));pointer-events:none}
+.hud h1{font:700 32px/1 var(--display);letter-spacing:.05em;margin:0;text-shadow:0 2px 0 rgba(0,0,0,.6)}
+.sub{margin:4px 0 2px;color:var(--muted);font-size:12px}
+#state{margin:0 0 10px;color:var(--sage);font-size:12px;font-variant-numeric:tabular-nums;min-height:1.45em}
+.keys{pointer-events:auto;background:var(--panel);border:1px solid var(--line);padding:8px 12px}
+.keys summary{cursor:pointer;font:700 15px var(--display);letter-spacing:.06em;color:var(--brass)}
+.keys dl{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;margin:8px 0 2px;font-size:12px;align-items:center}
+.keys dt{white-space:nowrap;margin:0}
+.keys dd{margin:0;color:var(--muted)}
+.keys p{margin:8px 0 2px;color:var(--muted);font-size:12px}
+kbd{display:inline-block;min-width:1.5em;padding:1px 5px;margin-right:3px;border:1px solid var(--line);border-bottom-width:2px;text-align:center;font:500 11px var(--mono);color:var(--ink);background:rgba(227,226,208,.05)}
+.opts{position:fixed;right:16px;top:calc(16px + env(safe-area-inset-top,0px));width:196px;background:var(--panel);border:1px solid var(--line);padding:10px 12px;display:grid;gap:8px;font-size:12px}
+.opts .row{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.opts .lbl{color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-size:10px}
+.opts output{font-variant-numeric:tabular-nums;color:var(--ink)}
+.opts input[type=range]{width:100%;accent-color:var(--sage)}
+.sw{display:flex;gap:6px}
+.sw button{width:30px;height:30px;border:1px solid var(--line);cursor:pointer;padding:0;background:var(--c)}
+.sw button[aria-pressed=true]{outline:2px solid var(--brass);outline-offset:2px}
+.chk{display:flex;gap:8px;align-items:center;cursor:pointer}
+.chk input{accent-color:var(--sage)}
+.pads{position:fixed;right:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));display:none;gap:12px}
+.pads button{width:74px;height:74px;border-radius:50%;border:1px solid var(--brass);background:var(--panel);color:var(--ink);font:700 15px var(--display);letter-spacing:.04em;touch-action:none;user-select:none;-webkit-user-select:none}
+.pads button:active,.pads button.on{background:var(--brass);color:var(--bg)}
+button:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid var(--brass);outline-offset:2px}
+.touch-only{display:none}
+@media (hover:none){ .pads{display:flex} .touch-only{display:block} .desk-only{display:none} }
+@media (max-width:640px){
+  .hud h1{font-size:24px}
+  .opts{top:auto;right:auto;left:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));width:172px}
+}
+#fx{position:fixed;inset:0;pointer-events:none;overflow:hidden}
+.dmg{position:absolute;left:0;top:0;font:700 20px var(--display);color:var(--ink);text-shadow:0 2px 0 #000,0 0 8px rgba(0,0,0,.7);white-space:nowrap;will-change:transform,opacity}
+.dmg.crit{color:var(--brass);font-size:26px}
+#boot{position:fixed;inset:0;display:grid;place-items:center;color:var(--muted);font-size:12px;pointer-events:none}
+</style>
+
+<div id="stage"></div>
+<div id="fx"></div>
+<div id="boot">Собираю рыцаря…</div>
+
+<header class="hud">
+  <h1>Последний караул</h1>
+  <p class="sub">изометрия 2:1 · процедурная анимация · пиксельный рендер</p>
+  <p id="state" aria-live="off"></p>
+  <details class="keys" id="keys" open>
+    <summary>Управление</summary>
+    <dl class="desk-only">
+      <dt><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></dt><dd>идти</dd>
+      <dt><kbd>Shift</kbd></dt><dd>бежать</dd>
+      <dt><kbd>ЛКМ</kbd><kbd>Space</kbd></dt><dd>удар; повторно — серия из двух</dd>
+      <dt><kbd>ПКМ</kbd></dt><dd>щит, смотреть на курсор, шаг вбок</dd>
+      <dt><kbd>F</kbd></dt><dd>щит без поворота</dd>
+      <dt><kbd>T</kbd></dt><dd>замедление ¼×</dd>
+      <dt><kbd>Q</kbd><kbd>E</kbd></dt><dd>повернуть камеру на 90°</dd>
+      <dt>колесо</dt><dd>масштаб</dd>
+    </dl>
+    <p class="touch-only">Тап или удержание на земле — идти. Справа внизу — удар и щит.</p>
+    <p>Бейте соломенные чучела во дворе.</p>
+  </details>
+</header>
+
+<aside class="opts" aria-label="Настройки">
+  <div class="row"><label class="lbl" for="pix">Размер пикселя</label><output id="pixOut">2×</output></div>
+  <input id="pix" type="range" min="1" max="4" step="1" value="2">
+  <span class="lbl">Цвет сукна</span>
+  <div class="sw" id="sw">
+    <button type="button" style="--c:#683b39" data-c="683b39" aria-label="Бычья кровь" aria-pressed="true"></button>
+    <button type="button" style="--c:#34496b" data-c="34496b" aria-label="Синий" aria-pressed="false"></button>
+    <button type="button" style="--c:#3f5a3c" data-c="3f5a3c" aria-label="Зелёный" aria-pressed="false"></button>
+    <button type="button" style="--c:#2e2f2c" data-c="2e2f2c" aria-label="Чёрный" aria-pressed="false"></button>
+  </div>
+  <label class="chk"><input id="slow" type="checkbox"> Замедление ¼×</label>
+  <label class="chk"><input id="snap8" type="checkbox"> 8 направлений, как у спрайтов</label>
+</aside>
+
+<div class="pads">
+  <button type="button" id="bBlk">Щит</button>
+  <button type="button" id="bAtk">Удар</button>
+</div>
+
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"}}</script>
+<script type="module">
+import('./src/main.js').then(() => document.getElementById('boot').remove())
+  .catch(e => { document.getElementById('boot').textContent = 'Не удалось загрузить игру: ' + e.message; console.error(e); });
+</script>

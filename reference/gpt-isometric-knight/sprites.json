@@ -1,0 +1,17 @@
+{
+  "frameWidth": 192,
+  "frameHeight": 192,
+  "pivot": {"x": 96, "y": 147.4},
+  "cameraElevationDegrees": 35.264,
+  "orthographicSize": 3.2,
+  "transparentBackground": true,
+  "layout": "directions-in-rows-frames-in-columns",
+  "cameraAzimuthDegreesByRow": [0, 45, 90, 135, 180, 225, 270, 315],
+  "characterForward": "+Z",
+  "walkSpeedMetersPerSecond": 0.632183908,
+  "animations": {
+    "Idle": {"file": "knight-idle.png", "framesPerDirection": 1, "durationSeconds": 2.4},
+    "Walk": {"file": "knight-walk.png", "framesPerDirection": 16, "durationSeconds": 1.16},
+    "Attack": {"file": "knight-attack.png", "framesPerDirection": 24, "durationSeconds": 1.8}
+  }
+}
