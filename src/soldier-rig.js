@@ -76,6 +76,8 @@ export function createRig(soldier) {
     kickZ: new Spring(420, 30), kickP: new Spring(300, 17), kickY: new Spring(300, 20), shoulder: new Spring(200, 16),
     canteenX: new Spring(90, 5), canteenZ: new Spring(90, 5), strapX: new Spring(60, 3.2), strapZ: new Spring(60, 3.2),
     impact: new Spring(260, 18), headPrev: null, headVel: V(),
+    // hit reactions: torso pitch / roll / twist and a head snap, all in radians
+    flP: new Spring(140, 11), flR: new Spring(140, 11), flT: new Spring(120, 10), flH: new Spring(180, 9),
     events: [], out: { muzzle: V(), aimDir: V(0, 0, 1), barrel: V(0, 0, 1), eject: V(), ejectDir: V(), magVisible: true }
   };
   const IDLE_FEET = { L: [.125, .05, .16], R: [-.13, -.04, -.12] };
@@ -121,7 +123,8 @@ export function createRig(soldier) {
   function blendPose(a, b, w) { return { butt: a.butt.clone().lerp(b.butt, w), q: a.q.clone().slerp(b.q, w) }; }
 
   // input: velLocal, accLocal, yawRate, aim (bool), aimLocal (V|null, character space), crouch (bool),
-  // shot (bool), melee {def,t}|null, newMelee, impact, reload {t, def, empty}|null
+  // shot (bool), melee {def,t}|null, newMelee, impact, reload {t, def, empty}|null,
+  // flinch {dir, at, power}|null — a hit this frame: bullet direction and hit point in character space
   function update(dt, input) {
     s.time += dt;
     const vl = input.velLocal;
@@ -156,6 +159,15 @@ export function createRig(soldier) {
     const kz = s.kickZ.step(0, dt), kp = s.kickP.step(0, dt), ky = s.kickY.step(0, dt), ksh = s.shoulder.step(0, dt);
     if (input.impact) s.impact.v += 8;
     const imp = s.impact.step(0, dt);
+    if (input.flinch) {
+      // the torso is driven along the bullet, twisted by the off-centre torque (τy = rz·Fx − rx·Fz)
+      const { dir, at, power } = input.flinch, up = clamp((at.y - .9)/.6, 0, 1);
+      s.flP.v += dir.z*11*power*(.4 + up); s.flR.v -= dir.x*9*power*(.4 + up);
+      s.flT.v += ((at.z)*dir.x - (at.x)*dir.z)*40*power;
+      if (at.y > 1.5) s.flH.v -= 14*power*Math.sign(-dir.z || 1);
+      s.impact.v += 5*power;
+    }
+    const flP = s.flP.step(0, dt), flR = s.flR.step(0, dt), flT = s.flT.step(0, dt), flH = s.flH.step(0, dt);
 
     // ---------- melee layer ----------
     let mel = null, mlw = 0;
@@ -179,6 +191,7 @@ export function createRig(soldier) {
     const bank = clamp(-s.acc.x*.02, -.14, .14);
     let roll = .022*(gait.L.bell - gait.R.bell)*mw + bank;
     if (mel) { hz += mel.hz*mlw*(1 - mw*.8); lean += mel.lean*mlw; twist += mel.twist*mlw; }
+    lean += flP; roll += flR; twist += flT; hz += flP*.08;
     if (input.reload) lean += .04*s.reloadW;
 
     for (const [b, p, q, sc] of rest) { b.position.copy(p); b.quaternion.copy(q); b.scale.copy(sc); }
@@ -286,10 +299,10 @@ export function createRig(soldier) {
     // ---------- head: look along the line of fire, cheek welded to the stock ----------
     {
       neck.position.z += .025*aw;
-      neck.rotation.set(.4*aw + .1*cr, -(pelvisYaw + twist)*.55*(1 - aw), 0);
+      neck.rotation.set(.4*aw + .1*cr + flH*.5, -(pelvisYaw + twist)*.55*(1 - aw), 0);
       neck.updateMatrixWorld(true);
       const lookYaw = s.aimYaw*aw + (input.reload ? .35*s.reloadW : 0);
-      const lookPitch = s.aimPitch*aw + (input.reload ? -.55*s.reloadW : -.04) - .3*aw - .08*lean;
+      const lookPitch = s.aimPitch*aw + (input.reload ? -.55*s.reloadW : -.04) - .3*aw - .08*lean - flH;
       const roll = .42*aw;
       const want = _q2.copy(rootQ).multiply(_q.setFromEuler(new THREE.Euler(-lookPitch, lookYaw, roll, 'YXZ')));
       const cur = head.getWorldQuaternion(new THREE.Quaternion());
@@ -322,8 +335,13 @@ export function createRig(soldier) {
     s.out.ejectDir.copy(GUN.ejectDir).transformDirection(rw2);
     s.out.rifleQ = rifle.getWorldQuaternion(new THREE.Quaternion());
     s.out.magMatrix = mag.matrixWorld.clone();
-    stepSling(dt, GUN.swivelF.clone().applyMatrix4(rw2), GUN.swivelR.clone().applyMatrix4(rw2), input.viewDir || V(0, -.5, -.87));
+    slingFromRifle(dt, input.viewDir);
+  }
+  // the sling hangs from the rifle's swivels wherever the rifle is (also when a ragdoll drops it)
+  function slingFromRifle(dt, viewDir) {
+    const rw2 = rifle.matrixWorld;
+    stepSling(dt, GUN.swivelF.clone().applyMatrix4(rw2), GUN.swivelR.clone().applyMatrix4(rw2), viewDir || V(0, -.5, -.87));
   }
 
-  return { update, state: s };
+  return { update, state: s, sling: slingFromRifle };
 }

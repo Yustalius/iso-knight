@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { makeMaterial, CAMO } from './textures.js';
+import { makeMaterial, CAMO, style } from './textures.js';
 import { createKit } from './rigid-kit.js';
 
 // A 1993 U.S. Army rifleman, the soldier of Project Zomboid's Knox Event: M81 woodland BDU with
@@ -22,16 +22,19 @@ export const GUN = {
 // Lightened palette for the inside-out fabric of rolled sleeves.
 const washed = pal => pal.map(c => '#' + new THREE.Color(c).lerp(new THREE.Color('#d6cdb0'), .38).getHexString());
 
-export function createSoldier() {
-  const root = new THREE.Group(); root.name = 'Soldier';
+// opts.camo picks the uniform palette; opts.opfor adds the red armbands of a training aggressor.
+export function createSoldier(opts = {}) {
+  const pal0 = CAMO[opts.camo] || CAMO.woodland;
+  const root = new THREE.Group(); root.name = opts.opfor ? 'OPFOR soldier' : 'Soldier';
   const { bones, joint, box, ellipsoid, rings, panel, profile, piece, bake } = createKit(root);
   const m = {
-    camo: makeMaterial('BDU woodland', CAMO.woodland, 'camo', 0, 21),
-    vest: makeMaterial('PASGT vest', CAMO.woodland, 'camo', 0, 23),
-    rolled: makeMaterial('Rolled sleeve', washed(CAMO.woodland), 'camo', 0, 22),
+    camo: makeMaterial('BDU', pal0, 'camo', 0, 21),
+    vest: makeMaterial('PASGT vest', pal0, 'camo', 0, 23),
+    rolled: makeMaterial('Rolled sleeve', washed(pal0), 'camo', 0, 22),
+    armband: makeMaterial('OPFOR armband', '#a8322a', 'cloth', 0, 40),
     web: makeMaterial('ALICE webbing', '#41442d', 'webbing', 0, 24),
     canvas: makeMaterial('Canteen cover', '#58593d', 'cloth', 0, 34),
-    skin: makeMaterial('Skin', '#9e7155', 'skin', 0, 25),
+    skin: makeMaterial('Skin', style.smooth ? '#94735f' : '#9e7155', 'skin', 0, 25),
     lips: makeMaterial('Lips', '#7a4f3e', 'skin', 0, 35),
     hair: makeMaterial('Hair', '#3b2d22', 'plain', 0, 30),
     dark: makeMaterial('Recesses', '#1c1f1d', 'plain', 0, 26),
@@ -160,6 +163,7 @@ export function createSoldier() {
     rings('Sleeve', [[-.215,.066,.068],[-.09,.074,.076],[0,.082,.082]], m.camo, upper);
     rings('Rolled cuff', [[-.262,.071,.073],[-.2,.076,.078]], m.rolled, upper);
     box(side === 'L' ? 'Unit patch' : 'Flag patch', [.008,.05,.044], m.dark, upper, [sign*.085,-.085,0]);
+    if (opts.opfor) rings('Armband', [[-.16,.08,.082],[-.115,.083,.085]], m.armband, upper);
     ellipsoid('Elbow', [.058,.058,.058], m.skin, fore, [0,-.01,0], 6);
     rings('Forearm', [[-.245,.044,.047],[-.13,.055,.058],[-.02,.058,.06]], m.skin, fore);
     if (side === 'L') {
@@ -237,10 +241,10 @@ export function createSoldier() {
   const sIdx = []; for (let i = 0; i < SLING_N - 1; i++) { const a = i*2; sIdx.push(a, a+1, a+2, a+1, a+3, a+2); }
   const sUv = []; for (let i = 0; i < SLING_N; i++) sUv.push(0, i/SLING_N*4, .3, i/SLING_N*4);
   slingGeo.setIndex(sIdx); slingGeo.setAttribute('uv', new THREE.Float32BufferAttribute(sUv, 2));
-  const slingMat = new THREE.MeshStandardMaterial({ map: m.web.map, roughness: .96, side: THREE.DoubleSide, flatShading: true });
+  const slingMat = new THREE.MeshStandardMaterial({ map: m.web.map, roughness: .96, side: THREE.DoubleSide, flatShading: !style.smooth });
   const sling = new THREE.Mesh(slingGeo, slingMat); sling.name = 'Sling'; sling.castShadow = true; sling.frustumCulled = false;
 
-  const { skin, geometry } = bake('Soldier');
+  const { skin, geometry } = bake('Soldier', { crease: style.smooth ? 1.0 : 0 });
 
   return {
     root, skin, bones, materials: m, sling, slingN: SLING_N,

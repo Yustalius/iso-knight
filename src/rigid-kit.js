@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeGeometries, toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // Construction kit for rigid-skinned low-poly characters (knight, soldier): bones, primitive
 // pieces attached to bones, and a bake step that merges everything into one SkinnedMesh.
@@ -50,13 +50,16 @@ export function createKit(root) {
     m.position.set(...pos); m.rotation.set(...rot); return m;
   }
 
-  function bake(name) {
+  // `crease` (radians) smooths normals across edges shallower than that angle: rounded parts shade
+  // smoothly while boxes keep crisp edges. Without it every face is flat, as the knight is drawn.
+  function bake(name, { crease = 0 } = {}) {
     root.updateMatrixWorld(true);
     const buckets = new Map();
     for (const { mesh, bone } of pieces) {
-      const g = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
+      let g = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
       g.applyMatrix4(mesh.matrixWorld);
-      g.deleteAttribute('normal'); g.computeVertexNormals();
+      g.deleteAttribute('normal');
+      if (crease) g = toCreasedNormals(g, crease); else g.computeVertexNormals();
       const count = g.attributes.position.count, ids = new Uint16Array(count*4), weights = new Float32Array(count*4);
       const bi = bones.indexOf(bone);
       for (let i = 0; i < count; i++) { ids[i*4] = bi; weights[i*4] = 1; }

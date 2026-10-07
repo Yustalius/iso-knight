@@ -93,6 +93,9 @@ export function createSfx() {
       else if (kind === 'metal' || kind === 'steel') { tone(b, t, { f: J(1900, .3), f2: 1700, d: .18, g: .25 }); burst(b, t, { type: 'highpass', f: 2500, a: .0005, d: .02, g: .6 }); }
       else if (kind === 'tin') { tone(b, t, { f: J(2600, .3), f2: 2300, d: .12, g: .3 }); burst(b, t, { type: 'bandpass', f: 4000, q: 2, a: .0005, d: .03, g: .6 }); }
       else if (kind === 'concrete' || kind === 'asphalt' || kind === 'gravel') burst(b, t, { type: 'bandpass', f: 2000, q: 1, a: .0005, d: .05, g: .9 });
+      else if (kind === 'flesh') { burst(b, t, { type: 'lowpass', f: 1300, f2: 260, a: .001, d: .07, g: 1.3 }); tone(b, t, { f: 170, f2: 70, d: .07, g: .55 }); }
+      else if (kind === 'body') { burst(b, t, { type: 'lowpass', f: 600, f2: 120, a: .004, d: .16, g: 1.4 }); tone(b, t, { f: 95, f2: 45, d: .14, g: .7 }); }
+      else if (kind === 'rifle') { burst(b, t, { type: 'bandpass', f: 1500, q: 1.5, a: .001, d: .06, g: 1 }); tone(b, t, { f: 900, f2: 700, d: .07, g: .15 }); }
       else burst(b, t, { type: 'lowpass', f: 700, f2: 200, a: .002, d: .09, g: 1 });
     },
     clack(pan = 0) {

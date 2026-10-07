@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { makeRandom } from './textures.js';
+import { makeRandom, style } from './textures.js';
 import { magazineMesh } from './soldier-model.js';
 
 // Everything a shot leaves behind: muzzle flash and light, smoke, the bullet with its tracer,
@@ -12,7 +12,8 @@ const _q = new THREE.Quaternion(), _v = V(), _m = new THREE.Matrix4();
 function spriteTex(draw) {
   const c = document.createElement('canvas'); c.width = c.height = 64;
   draw(c.getContext('2d'));
-  const t = new THREE.CanvasTexture(c); t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter; t.colorSpace = THREE.SRGBColorSpace;
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  if (!style.smooth) { t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter; }
   return t;
 }
 
@@ -31,7 +32,9 @@ export function createFx(scene, world, soldier) {
     chip: new THREE.MeshStandardMaterial({ color: 0x9c998e, roughness: 1, flatShading: true }),
     leaf: new THREE.MeshStandardMaterial({ color: 0x5d683b, roughness: 1, flatShading: true, side: THREE.DoubleSide }),
     paint: new THREE.MeshStandardMaterial({ color: 0x4f5b31, roughness: 1, flatShading: true }),
-    sand: new THREE.MeshStandardMaterial({ color: 0xa39470, roughness: 1, flatShading: true })
+    sand: new THREE.MeshStandardMaterial({ color: 0xa39470, roughness: 1, flatShading: true }),
+    blood: new THREE.MeshStandardMaterial({ color: 0x6e0f0b, roughness: .35, metalness: .1 }),
+    mist: new THREE.MeshStandardMaterial({ color: 0x8a1d16, roughness: 1, transparent: true, opacity: .3, depthWrite: false })
   };
   const KIND = {
     spark: { geo: geoCube, mat: 'spark', life: [.12, .3], drag: 1, g: 9.8, spin: 0, grow: 0, sc: .6 },
@@ -43,7 +46,9 @@ export function createFx(scene, world, soldier) {
     paint: { geo: geoFlake, mat: 'paint', life: [.6, 1.1], drag: 3, g: 5, spin: 16, grow: 0, sc: .6 },
     chip: { geo: geoCube, mat: 'chip', life: [.4, .8], drag: 1, g: 9.8, spin: 14, grow: 0, sc: .7 },
     leaf: { geo: geoFlake, mat: 'leaf', life: [1.2, 2], drag: 5, g: 1.6, spin: 6, grow: 0, sc: 1 },
-    fiber: { geo: geoCube, mat: 'sand', life: [.4, .7], drag: 2, g: 6, spin: 10, grow: 0, sc: .5 }
+    fiber: { geo: geoCube, mat: 'sand', life: [.4, .7], drag: 2, g: 6, spin: 10, grow: 0, sc: .5 },
+    blood: { geo: geoCube, mat: 'blood', life: [.6, 1.1], drag: 1.2, g: 9.8, spin: 8, grow: 0, sc: .5, stain: true },
+    mist: { geo: geoPuff, mat: 'mist', life: [.14, .28], drag: 7, g: -.2, spin: 1, grow: 1.8, sc: .22 }
   };
   const parts = [];
   for (let i = 0; i < 360; i++) { const m = new THREE.Mesh(geoCube, mats.spark); m.visible = false; scene.add(m); parts.push({ m, v: V(), w: V(), life: 0, max: 1, k: KIND.spark }); }
@@ -56,7 +61,7 @@ export function createFx(scene, world, soldier) {
       m.position.copy(p); m.rotation.set(R()*6, R()*6, R()*6); m.scale.setScalar(k.sc);
       q.life = q.max = k.life[0] + R()*(k.life[1] - k.life[0]);
       q.v.set(dir.x*speed + (R() - .5)*spread*2, dir.y*speed + (R() - .2)*spread*1.5, dir.z*speed + (R() - .5)*spread*2);
-      q.w.set((R() - .5)*k.spin, (R() - .5)*k.spin, (R() - .5)*k.spin);
+      q.w.set((R() - .5)*k.spin, (R() - .5)*k.spin, (R() - .5)*k.spin); q.landed = false;
     }
   }
   function updateParts(dt) {
@@ -68,7 +73,10 @@ export function createFx(scene, world, soldier) {
       m.position.addScaledVector(q.v, dt);
       m.rotation.x += q.w.x*dt; m.rotation.y += q.w.y*dt; m.rotation.z += q.w.z*dt;
       const floor = world.groundAt(m.position.x, m.position.z, m.position.y) + .01;
-      if (m.position.y < floor) { m.position.y = floor; q.v.y *= -.25; q.v.x *= .5; q.v.z *= .5; q.w.multiplyScalar(.4); }
+      if (m.position.y < floor) {
+        if (k.stain && !q.landed) { q.landed = true; q.life = 0; stain(m.position, .05 + R()*.07); continue; }   // a drop becomes a spot
+        m.position.y = floor; q.v.y *= -.25; q.v.x *= .5; q.v.z *= .5; q.w.multiplyScalar(.4);
+      }
       const f = q.life/q.max;
       if (k.grow) m.scale.setScalar(k.sc*(1 + (1 - f)*k.grow)); else if (f < .3) m.scale.setScalar(k.sc*f/.3);
     }
@@ -128,7 +136,7 @@ export function createFx(scene, world, soldier) {
   }
 
   // ---------- spent brass and dropped magazines: tiny rigid bodies ----------
-  const brassMat = new THREE.MeshStandardMaterial({ color: 0xc9a14a, roughness: .35, metalness: .75, flatShading: true });
+  const brassMat = new THREE.MeshStandardMaterial({ color: 0xc9a14a, roughness: .35, metalness: .75, flatShading: !style.smooth });
   const caseGeo = new THREE.CylinderGeometry(.009, .009, .066, 6);   // ~1.4× real 5.56 brass so it reads at game zoom
   const CASES = 140, cases = new THREE.InstancedMesh(caseGeo, brassMat, CASES);
   cases.count = 0; cases.frustumCulled = false; scene.add(cases);
@@ -199,8 +207,19 @@ export function createFx(scene, world, soldier) {
     for (let i = 0; i < 12; i++) { const a = rnd()*Math.PI*2, L = 10 + rnd()*20; for (let r = 0; r < L; r += 2) ctx.fillRect(32 + Math.cos(a)*r - 2, 32 + Math.sin(a)*r - 2, 4, 4); }
     ctx.fillStyle = '#3d3f3c'; ctx.beginPath(); ctx.arc(32, 32, 9, 0, Math.PI*2); ctx.fill();
   });
+  const bloodTex = spriteTex(ctx => {
+    const rnd = makeRandom(23);
+    for (let i = 0; i < 7; i++) {
+      const a = rnd()*Math.PI*2, d = rnd()*10, r = 7 + rnd()*9, x = 32 + Math.cos(a)*d, y = 32 + Math.sin(a)*d;
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, 'rgba(96,12,9,.95)'); g.addColorStop(.7, 'rgba(84,10,8,.9)'); g.addColorStop(1, 'rgba(84,10,8,0)');
+      ctx.fillStyle = g; ctx.fillRect(0, 0, 64, 64);
+    }
+    ctx.fillStyle = 'rgba(90,12,9,.9)';
+    for (let i = 0; i < 10; i++) { const a = rnd()*Math.PI*2, d = 18 + rnd()*12; ctx.beginPath(); ctx.arc(32 + Math.cos(a)*d, 32 + Math.sin(a)*d, 1 + rnd()*2.2, 0, Math.PI*2); ctx.fill(); }
+  });
   const dmat = tex => new THREE.MeshStandardMaterial({ map: tex, transparent: true, alphaTest: .4, depthWrite: false, roughness: 1, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
-  const DEC = { hole: dmat(holeTex), pit: dmat(pitTex), splat: dmat(splatTex) };
+  const DEC = { hole: dmat(holeTex), pit: dmat(pitTex), splat: dmat(splatTex), blood: dmat(bloodTex) };
+  DEC.blood.roughness = .3; DEC.blood.alphaTest = .25;
   const decalGeo = new THREE.PlaneGeometry(1, 1);
   const STATIC_N = 260, statics = {};
   for (const k in DEC) { const im = new THREE.InstancedMesh(decalGeo, DEC[k], STATIC_N); im.count = 0; im.frustumCulled = false; im.receiveShadow = true; scene.add(im); statics[k] = { im, i: 0 }; }
@@ -222,6 +241,19 @@ export function createFx(scene, world, soldier) {
   }
 
   // ---------- impact debris by material ----------
+  // a blood spot on whatever is underneath a point
+  function stain(p, size) {
+    const s = statics.blood, i = s.i++ % STATIC_N, y = world.groundAt(p.x, p.z, p.y + .05);
+    _q.setFromUnitVectors(V(0, 0, 1), V(0, 1, 0)); _q.multiply(new THREE.Quaternion().setFromAxisAngle(V(0, 0, 1), R()*6));
+    _m.compose(V(p.x, y + .006 + (i % 7)*.0004, p.z), _q, _v.set(size*(.8 + R()*.5), size*(.8 + R()*.5), 1));
+    s.im.setMatrixAt(i, _m); s.im.instanceMatrix.needsUpdate = true; s.im.count = Math.min(STATIC_N, Math.max(s.im.count, i + 1));
+  }
+  // a bullet through flesh: a red puff at the wound, drops thrown on through and a little back-spray
+  function blood(p, dir, amount = 1) {
+    emit('mist', p, dir, Math.round(3 + 3*amount), .9, .35);
+    emit('blood', p, dir, Math.round(7*amount), 2.4, .8);
+    emit('blood', p, dir.clone().negate().add(V(0, .6, 0)).normalize(), Math.round(2*amount), 1.2, .5);
+  }
   function impact(hit, dir) {
     const p = hit.point, n = hit.normal, refl = dir.clone().reflect(n).multiplyScalar(.5).add(n).normalize();
     switch (hit.kind) {
@@ -231,6 +263,7 @@ export function createFx(scene, world, soldier) {
       case 'sand': emit('fiber', p, refl, 4, 1.4, .8); emit('dust', p, n, 3, .5, .4); break;
       case 'leaf': emit('leaf', p, refl, 6, 1, .9); break;
       case 'gravel': emit('chip', p, refl, 5, 2, 1.2); emit('dust', p, n, 3, .7, .3); break;
+      case 'flesh': return;   // the target bleeds through blood(), with its own amount per wound
       default: emit('clod', p, refl, 7, 2.6, 1); emit('dust', p, n, 4, .9, .4);
     }
     decal(hit);
@@ -242,5 +275,5 @@ export function createFx(scene, world, soldier) {
     light.intensity *= Math.exp(-55*dt); if (light.intensity < .05) light.intensity = 0;
     updateBullets(dt); updateBodies(dt); updateParts(dt);
   }
-  return { emit, muzzleFlash, fireBullet, eject, dropMag, impact, update, set onSound(f) { sfxHook = f; } };
+  return { emit, muzzleFlash, fireBullet, eject, dropMag, impact, blood, stain, update, set onSound(f) { sfxHook = f; } };
 }

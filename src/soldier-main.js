@@ -1,9 +1,11 @@
 import * as THREE from 'three';
+import { style as texStyle } from './textures.js';
 import { createSoldier } from './soldier-model.js';
 import { createRig, MELEE, RELOAD } from './soldier-rig.js';
 import { buildRange, BG, START } from './range-world.js';
 import { createFx } from './gunfx.js';
 import { createSfx } from './sfx.js';
+import { createEnemy } from './enemy.js';
 
 const V = (x=0, y=0, z=0) => new THREE.Vector3(x, y, z);
 const clamp = THREE.MathUtils.clamp;
@@ -13,10 +15,12 @@ const wrapA = a => Math.atan2(Math.sin(a), Math.cos(a));
 const dampA = (a, b, k, dt) => a + wrapA(b-a)*(1-Math.exp(-k*dt));
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-// ---------- renderer / camera (the knight's setup: 30° ortho, texel-snapped follow) ----------
+// ---------- renderer / camera (the knight's 30° ortho camera, but smooth: native resolution + MSAA) ----------
 const stage = document.getElementById('stage');
-const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance', preserveDrawingBuffer: true });
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance', preserveDrawingBuffer: true });
 renderer.setPixelRatio(1);
+// painted 256 px textures, trilinear + anisotropic filtering and smooth shading for everything built below
+texStyle.smooth = true; texStyle.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
 renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.25;
@@ -26,17 +30,19 @@ renderer.domElement.tabIndex = 0;
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(BG);
 const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, .1, 200);
-let pix = 2, zoom = 6, viewH = 6, texel = .01, rw = 1, rh = 1;
+let resScale = 1, scale = 1, zoom = 6, viewH = 6, texel = .01, rw = 1, rh = 1;
 let camYaw = Math.PI/4, camYawT = Math.PI/4;
 const focus = V(START.x, .9, START.z - 1);
 const ELEV = Math.tan(Math.PI/6);
-const maskRT = new THREE.WebGLRenderTarget(1, 1, { depthBuffer: true });
+const maskRT = new THREE.WebGLRenderTarget(1, 1, { depthBuffer: true, samples: 4 });
 
 function resize() {
   const w = innerWidth, h = innerHeight;
-  rw = Math.max(1, Math.round(w/pix)); rh = Math.max(1, Math.round(h/pix));
+  // device pixels up to 2×, capped at ~4.5 Mpx so a 4K screen does not crawl; the settings slider scales it down
+  scale = Math.max(.5, Math.min(devicePixelRatio || 1, 2, Math.sqrt(4.5e6/(w*h))))*resScale;
+  rw = Math.max(1, Math.round(w*scale)); rh = Math.max(1, Math.round(h*scale));
   renderer.setSize(rw, rh, false);
-  maskRT.setSize(rw, rh); outlineMat.uniforms.texel.value.set(1/rw, 1/rh);
+  maskRT.setSize(rw, rh); outlineMat.uniforms.texel.value.set(1/rw, 1/rh); outlineMat.uniforms.width.value = 2.2*scale;
   const aspect = rw/rh;
   viewH = zoom*(aspect < 1 ? 1.4 : 1);
   Object.assign(cam, { left: -viewH*aspect/2, right: viewH*aspect/2, top: viewH/2, bottom: -viewH/2 });
@@ -60,7 +66,7 @@ function placeCamera(f) {
 // ---------- lights ----------
 scene.add(new THREE.HemisphereLight(0xdfe7d5, 0x4d4639, 1.9));
 const sun = new THREE.DirectionalLight(0xffe8bf, 3.0);
-sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
+sun.castShadow = true; sun.shadow.mapSize.setScalar(Math.min(4096, renderer.capabilities.maxTextureSize));
 Object.assign(sun.shadow.camera, { left: -11, right: 11, top: 11, bottom: -11, near: .5, far: 60 });
 sun.shadow.normalBias = .018; sun.shadow.bias = -.0002;
 scene.add(sun, sun.target);
@@ -73,27 +79,41 @@ const rig = createRig(soldier);
 const world = buildRange(scene);
 const fx = createFx(scene, world, soldier);
 const sfx = createSfx();
+// the OPFOR soldier: a target that bleeds, staggers and falls as a ragdoll
+let lastThump = 0;
+const enemy = createEnemy(scene, world, { x: -.6, z: -2.4, yaw: 0 }, {
+  context: () => ({ player: st.pos, viewDir: cam.getWorldDirection(V()) }),
+  blood: (p, d, amount) => fx.blood(p, d, amount),
+  thump: (p, speed, part) => {
+    if (time - lastThump < .07) return; lastThump = time;
+    sfx.impact(part === 'rifle' ? 'rifle' : 'body', panOf(p), volOf(p)*clamp(speed/4, .3, 1.2));
+  }
+});
+world.targets.push(enemy);
 
 // ---------- aim outline (Project Zomboid's coloured target outline) ----------
-// Outlined targets are drawn flat into a mask at render resolution; a full-screen pass then
-// paints the one-pixel ring around each silhouette in the target's hit-chance colour.
+// Outlined targets are drawn flat into a multisampled mask; a full-screen pass then paints a soft
+// ~2 px ring around each silhouette in the target's hit-chance colour (mask colours are premultiplied).
 const OUTLINE_LAYER = 1;
 for (const t of world.targets) { t.maskMat = new THREE.MeshBasicMaterial({ color: 0xffffff }); for (const m of t.meshes) m.layers.enable(OUTLINE_LAYER); }
 const outlineMat = new THREE.ShaderMaterial({
-  uniforms: { mask: { value: maskRT.texture }, texel: { value: new THREE.Vector2(1, 1) } },
+  uniforms: { mask: { value: maskRT.texture }, texel: { value: new THREE.Vector2(1, 1) }, width: { value: 2 } },
   vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0., 1.); }',
-  fragmentShader: `uniform sampler2D mask; uniform vec2 texel; varying vec2 vUv;
+  fragmentShader: `uniform sampler2D mask; uniform vec2 texel; uniform float width; varying vec2 vUv;
     void main(){
-      if (texture2D(mask, vUv).a > .5) discard;
-      vec4 n = texture2D(mask, vUv + vec2(texel.x, 0.)), t;
-      t = texture2D(mask, vUv - vec2(texel.x, 0.)); if (t.a > n.a) n = t;
-      t = texture2D(mask, vUv + vec2(0., texel.y)); if (t.a > n.a) n = t;
-      t = texture2D(mask, vUv - vec2(0., texel.y)); if (t.a > n.a) n = t;
-      if (n.a < .5) discard;
-      gl_FragColor = vec4(n.rgb, 1.);
+      float self = texture2D(mask, vUv).a;
+      vec4 best = vec4(0.);
+      for (int i = 0; i < 12; i++) {
+        vec2 o = vec2(cos(float(i)*.5236), sin(float(i)*.5236))*texel*width;
+        vec4 t = texture2D(mask, vUv + o); if (t.a > best.a) best = t;
+        t = texture2D(mask, vUv + o*.5); if (t.a > best.a) best = t;
+      }
+      float a = clamp(best.a - self, 0., 1.);
+      if (a < .02) discard;
+      gl_FragColor = vec4(best.rgb/max(best.a, 1e-3), a);
       #include <colorspace_fragment>
     }`,
-  depthTest: false, depthWrite: false
+  transparent: true, depthTest: false, depthWrite: false
 });
 const quadScene = new THREE.Scene();
 { const q = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), outlineMat); q.frustumCulled = false; quadScene.add(q); }
@@ -135,7 +155,7 @@ const opts = { outline: true, pan: true };
 const keys = {};
 const mouse = { x: 0, y: 0, inside: false };
 const aimPt = V(), aimInfo = { ok: false, hit: null, chance: 0 };
-let debugAim = null;
+let debugAim = null, debugFocus = null;
 const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
 function cursorRay(cx, cy) {
   const r = renderer.domElement.getBoundingClientRect();
@@ -161,9 +181,10 @@ function doMeleeHit() {
     if (dist > def.reach || Math.abs(wrapA(Math.atan2(dx, dz) - st.yaw)) > def.arc || c.y > 1.9) continue;
     const r = { point: c, normal: fwd.clone().negate(), kind: t.material, target: t };
     const knocked = t.hit(r, fwd, 1.4);
-    fx.emit(t.material === 'wood' ? 'splinter' : 'spark', c, fwd, 6, 1.5, .8);
+    if (t.material !== 'flesh') fx.emit(t.material === 'wood' ? 'splinter' : 'spark', c, fwd, 6, 1.5, .8);
     sfx.impact(t.material === 'wood' ? 'wood' : t.material, panOf(c), 1.4); if (t.type === 'gong') sfx.ding(panOf(c), .8);
     if (knocked && t.type === 'popup') popup('Сбита', c.clone().setY(1.6));
+    if (t.type === 'enemy' && knocked.killed) { wpn.kills++; popup('Убит', c.clone().setY(1.9)); }
     any = true;
   }
   if (any) { hitstop = .06; impact = true; shake = reduced ? 0 : .05; }
@@ -211,7 +232,12 @@ function onBulletHit(hit, dir) {
   wpn.hits++;
   const knocked = t.hit(hit, dir, 1);
   const top = t.center().setY(t.type === 'can' ? t.center().y + .25 : 1.55);
-  if (t.type === 'gong') { sfx.ding(pan, vol*1.4); popup('Дзынь', top); }
+  if (t.type === 'enemy') {
+    const r = knocked, at = t.center().setY(Math.max(1.75, t.center().y + .45));
+    if (r.dmg) popup('−' + r.dmg, at, r.zone === 'head' ? 'crit' : 'small');
+    if (r.killed) { wpn.kills++; popup(r.zone === 'head' ? 'В голову' : 'Убит', at.clone().setY(at.y + .25), r.zone === 'head' ? 'crit' : ''); }
+  }
+  else if (t.type === 'gong') { sfx.ding(pan, vol*1.4); popup('Дзынь', top); }
   else if (t.type === 'can') { sfx.impact('tin', pan, vol*1.4); popup('Банка', top, 'small'); }
   else if (knocked) { wpn.kills++; popup(hit.zone === 'head' ? 'В голову' : 'Поражена', top, hit.zone === 'head' ? 'crit' : ''); }
 }
@@ -276,9 +302,9 @@ for (const ev of ['pointerup', 'pointercancel']) pad('bFire').addEventListener(e
 pad('bReload').addEventListener('pointerdown', e => { e.preventDefault(); startReload(); });
 pad('bShove').addEventListener('pointerdown', e => { e.preventDefault(); sfx.unlock(); startMelee(); });
 
-const pixIn = pad('pix'), pixOut = pad('pixOut');
-pixIn.addEventListener('input', () => { pix = +pixIn.value; pixOut.textContent = pix + '×'; resize(); });
-pixIn.addEventListener('change', () => pixIn.blur());
+const resIn = pad('res'), resOut = pad('resOut');
+resIn.addEventListener('input', () => { resScale = +resIn.value; resOut.textContent = Math.round(resScale*100) + '%'; resize(); });
+resIn.addEventListener('change', () => resIn.blur());
 pad('sw').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
   for (const x of b.parentNode.children) x.setAttribute('aria-pressed', x === b);
@@ -484,6 +510,7 @@ function update(rawDt) {
   const lead = V(st.vel.x*.25, 0, st.vel.z*.25);
   if (aiming && aimInfo.ok && opts.pan) { const off = V(aimPt.x - st.pos.x, 0, aimPt.z - st.pos.z).multiplyScalar(.3); if (off.length() > 2.6) off.setLength(2.6); lead.add(off); }
   focus.x = damp(focus.x, st.pos.x + lead.x, 4.5, rawDt); focus.z = damp(focus.z, st.pos.z + lead.z, 4.5, rawDt);
+  if (debugFocus) { focus.x = debugFocus.x; focus.z = debugFocus.z; }
   shake = Math.max(0, shake - rawDt*.4);
   const f2 = focus.clone(); if (shake > 0) { f2.x += (Math.random() - .5)*shake; f2.z += (Math.random() - .5)*shake; }
   placeCamera(f2);
@@ -497,6 +524,7 @@ function update(rawDt) {
     const o = rig.state.out, half = spread(), d = fireLine();
     let hover = aimInfo.hit && aimInfo.hit.target, hoverChance = null;
     for (const t of world.targets) {
+      if (t.dead) continue;   // a body is still shootable, just not a target
       const ch = hitChance(t, o.muzzle, d, half);
       if (t === hover) hoverChance = ch;
       if (ch > 0 || t === hover) { t.maskMat.color.copy(chanceColor(ch)); outlined.push(t); }
@@ -557,6 +585,7 @@ window.__game = {
   attack() { startMelee(); },
   crouch(on = true) { st.crouch = !!on; },
   option(name, v) { opts[name] = v; },
+  focusAt(x, z) { debugFocus = x === false || x == null ? null : V(x, 0, z); },
   step(seconds, fps = 60) { for (let i = 0; i < Math.round(seconds*fps); i++) update(1/fps); render(); },
   view(yawDeg, z = zoom) { camYaw = camYawT = yawDeg*Math.PI/180; zoom = z; resize(); placeCamera(focus); render(); },
   place(x, z, yawDeg) { st.pos.set(x, 0, z); st.vel.set(0, 0, 0); st.yaw = st.yawT = yawDeg*Math.PI/180; focus.set(x, .9, z); },
@@ -571,5 +600,6 @@ window.__game = {
   },
   get state() { return { pos: st.pos.toArray(), yaw: st.yaw, aim: rig.state.aim, mag: wpn.mag, chamber: wpn.chamber, shots: wpn.shots, hits: wpn.hits, reload: st.reload && st.reload.t, melee: st.melee && st.melee.def.name }; },
   stats: { triangles: soldier.triangles },
+  enemy,
   scene, sfx
 };
