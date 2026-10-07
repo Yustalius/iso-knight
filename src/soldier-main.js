@@ -26,7 +26,7 @@ renderer.domElement.tabIndex = 0;
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(BG);
 const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, .1, 200);
-let pix = 2, zoom = 7, viewH = 7, texel = .01, rw = 1, rh = 1;
+let pix = 2, zoom = 6, viewH = 6, texel = .01, rw = 1, rh = 1;
 let camYaw = Math.PI/4, camYawT = Math.PI/4;
 const focus = V(START.x, .9, START.z - 1);
 const ELEV = Math.tan(Math.PI/6);

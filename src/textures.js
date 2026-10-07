@@ -7,9 +7,9 @@ export function makeRandom(seed) { return () => ((seed = (1664525 * seed + 10139
 
 // Camouflage palettes: [base, large blobs, dark branches, light spots].
 export const CAMO = {
-  woodland: ['#6b7450', '#5a4834', '#26261f', '#9c8f6c'],
+  woodland: ['#6f7853', '#5d4b36', '#30302a', '#a09371'],
   desert: ['#bba983', '#9b8564', '#6e5c47', '#cfc3a2'],
-  olive: ['#5b5f3d', '#54583a', '#474a31', '#63673f']
+  olive: ['#5d613f', '#585c3c', '#4d5035', '#64683f']
 };
 
 // Pixel-crisp filled circle, drawn with wrap-around so the pattern tiles.
@@ -82,14 +82,14 @@ export function makeTexture(color, type = 'plain', seed = 1729) {
     } else if (type === 'leaves') {
       for (let i = 0; i < 300; i++) { ctx.fillStyle = random() > .55 ? 'rgba(190,210,120,.22)' : 'rgba(10,20,8,.35)'; ctx.fillRect(random()*64, random()*64, 2, 2); }
     } else if (type === 'camo') {
-      // M81-style: large meandering blobs, then black branches, then light spots; everything wraps
-      const [, big, dark, light] = pal;
-      ctx.fillStyle = big; for (let i = 0; i < 7; i++) smear(ctx, random, 7, 3, 6, 4, .6);
-      ctx.fillStyle = light; for (let i = 0; i < 5; i++) smear(ctx, random, 3, 2, 3, 3, .7);
-      ctx.fillStyle = dark; for (let i = 0; i < 8; i++) smear(ctx, random, 5, 1, 2, 3, .45);
-      for (let i = 0; i < 500; i++) { ctx.fillStyle = random() > .5 ? 'rgba(255,240,205,.07)' : 'rgba(15,19,17,.12)'; ctx.fillRect(Math.floor(random()*64), Math.floor(random()*64), 1, 1); }
-      ctx.strokeStyle = 'rgba(17,16,12,.12)'; ctx.lineWidth = 1;
-      for (let x = -64; x < 128; x += 4) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x+64, 64); ctx.stroke(); }
+      // M81-style woodland at a readable scale: a few large blobs per tile and no pixel noise, so the
+      // limbs keep their shading at game zoom (fine speckle turns into mush at 2× pixels); wraps seamlessly
+      const [base, big, dark, light] = pal;
+      ctx.fillStyle = base; ctx.fillRect(0, 0, 64, 64);
+      ctx.fillStyle = big; for (let i = 0; i < 8; i++) smear(ctx, random, 5, 4, 6, 5, .55);
+      ctx.fillStyle = light; for (let i = 0; i < 5; i++) smear(ctx, random, 3, 3, 4, 4, .6);
+      ctx.fillStyle = dark; for (let i = 0; i < 8; i++) smear(ctx, random, 4, 2, 3, 4, .45);
+      for (let y = 0; y < 64; y += 2) { ctx.fillStyle = 'rgba(15,18,12,.05)'; ctx.fillRect(0, y, 64, 1); }   // faint twill
     } else if (type === 'webbing') {
       // nylon webbing: tight horizontal weave, stitched edges every 16 px
       for (let y = 0; y < 64; y += 2) { ctx.fillStyle = 'rgba(12,14,8,.22)'; ctx.fillRect(0, y, 64, 1); }
@@ -104,9 +104,9 @@ export function makeTexture(color, type = 'plain', seed = 1729) {
       for (let i = 0; i < 7; i++) { ctx.fillStyle = `rgba(${random() > .5 ? '70,66,52' : '230,226,210'},.08)`; ctx.fillRect(random()*56, random()*56, 6 + random()*10, 5 + random()*8); }
       ctx.fillStyle = 'rgba(20,20,18,.18)'; ctx.fillRect(0, 31, 64, 1);
     } else if (type === 'gravel') {
-      for (let i = 0; i < 420; i++) { ctx.fillStyle = random() > .5 ? 'rgba(235,228,205,.28)' : 'rgba(25,22,16,.35)'; ctx.fillRect(random()*64, random()*64, 1 + (random()*2|0), 1 + (random()*2|0)); }
+      for (let i = 0; i < 160; i++) { ctx.fillStyle = random() > .5 ? 'rgba(235,228,205,.13)' : 'rgba(25,22,16,.17)'; ctx.fillRect(random()*64, random()*64, 2, 2); }
     } else if (type === 'asphalt') {
-      for (let i = 0; i < 700; i++) { ctx.fillStyle = random() > .6 ? 'rgba(200,198,185,.14)' : 'rgba(5,5,5,.3)'; ctx.fillRect(random()*64, random()*64, 1, 1); }
+      for (let i = 0; i < 260; i++) { ctx.fillStyle = random() > .6 ? 'rgba(200,198,185,.08)' : 'rgba(5,5,5,.14)'; ctx.fillRect(random()*64, random()*64, 1, 1); }
     } else if (type === 'corrugated') {
       for (let x = 0; x < 64; x += 4) { ctx.fillStyle = 'rgba(255,250,235,.16)'; ctx.fillRect(x, 0, 1, 64); ctx.fillStyle = 'rgba(10,12,10,.3)'; ctx.fillRect(x + 2, 0, 1, 64); }
       for (let i = 0; i < 26; i++) { ctx.fillStyle = 'rgba(120,70,30,.25)'; ctx.fillRect(random()*64, random()*64, 2, 3 + random()*6); }

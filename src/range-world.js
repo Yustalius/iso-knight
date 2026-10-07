@@ -43,6 +43,7 @@ export function buildRange(scene) {
     bark: makeMaterial('Bark', '#4a3d2e', 'planks', 0, 37),
     rock: makeMaterial('Field stone', '#6c6e62', 'plain', 0, 38),
     dirt: makeMaterial('Berm earth', '#6b5a40', 'gravel', 0, 39),
+    soil: makeMaterial('Trodden soil', '#6d5f45', 'plain', 0, 54),
     gravel: makeMaterial('Gravel', '#77705f', 'gravel', 0, 40),
     concrete: makeMaterial('Concrete', '#8f8d82', 'concrete', 0, 41),
     canvas: makeMaterial('Tent canvas', '#5c5e3e', 'cloth', 0, 42),
@@ -57,6 +58,20 @@ export function buildRange(scene) {
     leaf: ['#56603a', '#4b5634', '#626b42'].map((c, i) => makeMaterial('Leaves', c, 'leaves', 0, 51 + i))
   };
   const tile = (mat, n) => { mat.map.wrapS = mat.map.wrapT = THREE.RepeatWrapping; mat.map.repeat.set(n, n); return mat; };
+  // Box-projected UVs (one 64px tile per `size` metres) for extruded shapes, whose own side UVs
+  // stretch the texture into streaks along the extrusion. Needs a repeat-wrapped map.
+  function boxUV(geo, size) {
+    const p = geo.attributes.position, uv = geo.attributes.uv, a = V(), b = V(), c = V(), n = V();
+    for (let i = 0; i < p.count; i += 3) {
+      a.fromBufferAttribute(p, i); b.fromBufferAttribute(p, i + 1); c.fromBufferAttribute(p, i + 2);
+      n.subVectors(c, b).cross(a.clone().sub(b)); const ax = Math.abs(n.x), ay = Math.abs(n.y), az = Math.abs(n.z);
+      for (let k = 0; k < 3; k++) {
+        const x = p.getX(i + k), y = p.getY(i + k), z = p.getZ(i + k);
+        if (ax >= ay && ax >= az) uv.setXY(i + k, z/size, y/size); else if (ay >= az) uv.setXY(i + k, x/size, z/size); else uv.setXY(i + k, x/size, y/size);
+      }
+    }
+    uv.needsUpdate = true; return geo;
+  }
 
   // ---------- ground: grass with macro tint, gravel firing line, road ----------
   {
@@ -76,10 +91,32 @@ export function buildRange(scene) {
     g.receiveShadow = true; scene.add(g);
   }
   const flat = (w, d, mat, x, z, y = .004, rot = 0) => { const p = mesh(new THREE.PlaneGeometry(w, d), mat, x, y, z); p.rotation.set(-Math.PI/2, 0, rot); p.castShadow = false; return p; };
-  tile(M.gravel, 1); flat(15, 3.4, M.gravel, 0, 2.6).material.map.repeat.set(5, 1.2);
-  { const line = flat(14.6, .07, M.signWhite, 0, 1.0, .006); line.material = M.signWhite; }
-  for (let i = 0; i < 18; i++) {   // worn dirt where people stood and around the target pits
-    const p = mesh(new THREE.CircleGeometry(.5 + R()*.5, 7), M.dirt, (R() - .5)*13, .005 + i*.0001, i < 8 ? 2 + R()*1.6 : -2 - R()*9);
+  // firing line: a pad of cast concrete slabs (one instanced draw, like the knight's flagstones)
+  // behind a painted curb; flat calm tiles keep the ground readable under the character
+  {
+    const slabs = [], palette = [0x8a897d, 0x83837a, 0x908e81, 0x7d7d73, 0x878478].map(c => new THREE.Color(c));
+    for (let z = 1.32; z < 4.3; z += .64) for (let x = -7.4; x < 7.4; x += .82) {
+      if (R() < .05) continue;   // a missing slab here and there, filled with soil
+      slabs.push([x + .41, z, .79, .61, .012 + R()*.012, (R() - .5)*.025]);
+    }
+    const im = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), makeMaterial('Slab', '#e9e7da', 'plain', 0, 55), slabs.length + 20);
+    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();
+    slabs.forEach(([x, z, w, d, top, rot], i) => {
+      q.setFromEuler(e.set((R() - .5)*.02, rot, (R() - .5)*.02));
+      m4.compose(V(x, top - .06, z), q, V(w, .12, d)); im.setMatrixAt(i, m4);
+      im.setColorAt(i, palette[(R()*palette.length) | 0].clone().multiplyScalar(.95 + R()*.1));
+    });
+    // painted curb along the firing line
+    for (let k = 0; k < 20; k++) {
+      const x = -7.4 + k*.74 + .37;
+      m4.compose(V(x, -.03, 1.0), q.setFromEuler(e.set(0, (R() - .5)*.02, 0)), V(.72, .12, .2)); im.setMatrixAt(slabs.length + k, m4);
+      im.setColorAt(slabs.length + k, new THREE.Color(0xe2ddc8).multiplyScalar(.95 + R()*.08));
+    }
+    im.castShadow = false; im.receiveShadow = true; scene.add(im); solid(im, 'concrete');
+    flat(15, 3.6, M.soil, 0, 2.65, .002);
+  }
+  for (let i = 0; i < 10; i++) {   // worn soil around the target pits
+    const p = mesh(new THREE.CircleGeometry(.5 + R()*.5, 7), M.soil, (R() - .5)*13, .005 + i*.0001, -2 - R()*9);
     p.rotation.x = -Math.PI/2; p.rotation.z = R()*6; p.scale.set(1, .7, 1); p.castShadow = false;
   }
   tile(M.asphalt, 1); flat(52, 3.2, M.asphalt, 0, 9.6, .005).material.map.repeat.set(16, 1);
@@ -122,7 +159,7 @@ export function buildRange(scene) {
   const barrierGeo = (() => {
     const shape = new THREE.Shape([[-.3,0],[.3,0],[.3,.08],[.2,.26],[.1,.8],[-.1,.8],[-.2,.26],[-.3,.08]].map(p => new THREE.Vector2(...p)));
     const g = new THREE.ExtrudeGeometry(shape, { depth: 2.6, bevelEnabled: true, bevelThickness: .02, bevelSize: .015, bevelSegments: 1 });
-    g.translate(0, 0, -1.3); return g;
+    g.translate(0, 0, -1.3); tile(M.concrete, 1); return boxUV(g, .9);
   })();
   function barrier(x, z, yaw) {
     const b = solid(mesh(barrierGeo, M.concrete, x, 0, z), 'concrete'); b.rotation.y = yaw;
@@ -158,8 +195,8 @@ export function buildRange(scene) {
     const geo = new THREE.ExtrudeGeometry(shape, { depth: 24, steps: 24, bevelEnabled: false });
     const p = geo.attributes.position;
     for (let i = 0; i < p.count; i++) { const y = p.getY(i), z = p.getZ(i); if (y > .1) p.setY(i, y + Math.sin(z*.9)*.12 + Math.sin(z*2.3)*.06); }
-    geo.computeVertexNormals(); geo.rotateY(Math.PI/2); geo.translate(-12, 0, -14.4);
-    tile(M.dirt, 1); M.dirt.map.repeat.set(1.5, 1.5);
+    geo.computeVertexNormals(); geo.rotateY(Math.PI/2); geo.translate(-12, 0, -14.4); boxUV(geo, 1.6);
+    tile(M.dirt, 1);
     const b = solid(mesh(geo, M.dirt), 'dirt');
     seg(-12, -14.2, 12, -14.2, 1.6);
     fadeables.push({ x: 0, z: -14.4, mats: [M.dirt], op: 1, r: 12, shared: true });
@@ -177,7 +214,7 @@ export function buildRange(scene) {
       const net = mesh(new THREE.PlaneGeometry(len, 1.8), link, 0, .95, 0, g); net.rotation.y = Math.PI/2;
       net.material.map.repeat.set(len*1.6, 1.8*1.6);
       for (let t = -len/2; t <= len/2 + .01; t += 2.5) {
-        solid(mesh(new THREE.CylinderGeometry(.035, .035, 2.2, 6), M.pipe, 0, 1.1, t, g), 'metal');
+        solid(mesh(new THREE.CylinderGeometry(.045, .045, 2.2, 6), M.pipe, 0, 1.1, t, g), 'metal');
         mesh(new THREE.BoxGeometry(.04, .04, .4), M.pipe, Math.sign(x)*.15, 2.18, t, g).rotation.z = Math.sign(x)*-.8;
       }
       mesh(new THREE.CylinderGeometry(.025, .025, len, 6), M.pipe, 0, 1.86, 0, g).rotation.x = Math.PI/2;
@@ -220,6 +257,7 @@ export function buildRange(scene) {
     const tc = M.canvas.clone(), tr = M.rope.clone(), td = M.oakDark.clone();
     const shape = new THREE.Shape([[-1.6,0],[1.6,0],[1.6,1.25],[0,2.15],[-1.6,1.25]].map(p => new THREE.Vector2(...p)));
     const geo = new THREE.ExtrudeGeometry(shape, { depth: 3.4, bevelEnabled: false }); geo.translate(0, 0, -1.7);
+    tile(M.canvas, 1); boxUV(geo, 1.1);
     solid(mesh(geo, tc, 0, 0, 0, g), 'canvas').rotation.y = Math.PI/2;
     mesh(new THREE.BoxGeometry(.04, 1.5, .9), td, -1.72, .75, 0, g);
     for (const s of [-1, 1]) for (const z of [-1.2, 0, 1.2]) {
@@ -314,14 +352,14 @@ export function buildRange(scene) {
   function gongFrame(x, z, plates) {
     const g = grp(x, 0, z), w = plates.length*.55 + .2;
     for (const s of [-1, 1]) {
-      solid(mesh(new THREE.CylinderGeometry(.03, .03, 1.6, 6), M.pipe, s*w/2, .8, -.18, g), 'metal').rotation.x = .2;
-      solid(mesh(new THREE.CylinderGeometry(.03, .03, 1.6, 6), M.pipe, s*w/2, .8, .18, g), 'metal').rotation.x = -.2;
+      solid(mesh(new THREE.CylinderGeometry(.045, .045, 1.6, 6), M.pipe, s*w/2, .8, -.18, g), 'metal').rotation.x = .2;
+      solid(mesh(new THREE.CylinderGeometry(.045, .045, 1.6, 6), M.pipe, s*w/2, .8, .18, g), 'metal').rotation.x = -.2;
     }
-    const bar = mesh(new THREE.CylinderGeometry(.03, .03, w + .1, 6), M.pipe, 0, 1.56, 0, g); bar.rotation.z = Math.PI/2; solid(bar, 'metal');
+    const bar = mesh(new THREE.CylinderGeometry(.045, .045, w + .1, 6), M.pipe, 0, 1.56, 0, g); bar.rotation.z = Math.PI/2; solid(bar, 'metal');
     plates.forEach(([px, len, r, rect], i) => {
       const piv = grp(px, 1.56, 0, g);
       for (const s of [-1, 1]) {
-        for (let k = 0; k < 4; k++) mesh(new THREE.TorusGeometry(.016, .005, 3, 6), M.pipe, s*r*.55, -.03 - k*len/4, 0, piv).rotation.y = k % 2 ? Math.PI/2 : 0;
+        for (let k = 0; k < 4; k++) mesh(new THREE.TorusGeometry(.02, .008, 3, 6), M.pipe, s*r*.55, -.03 - k*len/4, 0, piv).rotation.y = k % 2 ? Math.PI/2 : 0;
       }
       const plateGeo = rect ? new THREE.BoxGeometry(r*2, r*2.8, .02) : new THREE.CylinderGeometry(r, r, .02, 14);
       if (!rect) plateGeo.rotateX(Math.PI/2);
@@ -511,7 +549,7 @@ export function buildRange(scene) {
       const t = -o.y/d.y;
       if (t < far && (!best || t < best.t)) {
         const p = o.clone().addScaledVector(d, t);
-        best = { t, point: p, normal: V(0, 1, 0), kind: onRoad(p.x, p.z) ? 'asphalt' : (p.z > .9 && p.z < 4.3 && Math.abs(p.x) < 7.5) ? 'gravel' : 'dirt' };
+        best = { t, point: p, normal: V(0, 1, 0), kind: onRoad(p.x, p.z) ? 'asphalt' : (p.z > .9 && p.z < 4.3 && Math.abs(p.x) < 7.5) ? 'concrete' : 'dirt' };
       }
     }
     return best;

@@ -24,8 +24,8 @@ function rifleQ(dir, up) {
 }
 
 // Grips, in rifle space: wrist positions and hand frames.
-const GRIP_R = { pos: V(-.032, -.054, -.09), q: handFrame(V(0, -.39, .92), V(1, 0, 0), false) };
-const GRIP_L = { pos: V(.034, -.02, .15), q: handFrame(V(-.3, .25, .92), V(-.35, .94, 0), true) };
+const GRIP_R = { pos: V(-.04, -.056, -.09), q: handFrame(V(0, -.39, .92), V(1, 0, 0), false) };
+const GRIP_L = { pos: V(.043, -.026, .15), q: handFrame(V(-.3, .25, .92), V(-.35, .94, 0), true) };
 // support-hand frames for the reload: rifle-relative except 'pouch', which is body-relative
 const LFRAME = {
   grip: { q: GRIP_L.q, rifle: true },
@@ -36,10 +36,10 @@ const LFRAME = {
 
 // Rifle carry poses in chest space: butt position, muzzle direction, rifle-top hint.
 const POSE = {
-  ready: { butt: V(-.13, .055, .1), dir: V(.55, -.55, .63), up: V(-.2, 1, .2) },
+  ready: { butt: V(-.145, .055, .11), dir: V(.55, -.55, .63), up: V(-.2, 1, .2) },
   port: { butt: V(-.17, -.29, .14), dir: V(.585, .66, .48), up: V(-.25, -.1, 1) },
-  reload: { butt: V(-.2, -.06, -.06), dir: V(.4, .06, .92), up: V(-.55, .84, 0) },
-  pocket: V(-.102, .17, .065)   // shoulder pocket for the shouldered rifle
+  reload: { butt: V(-.215, -.06, -.05), dir: V(.4, .06, .92), up: V(-.55, .84, 0) },
+  pocket: V(-.118, .17, .078)   // shoulder pocket for the shouldered rifle
 };
 
 // Close-quarters shove with the rifle held crosswise, Project Zomboid's push. Keys are
