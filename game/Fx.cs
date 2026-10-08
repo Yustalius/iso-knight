@@ -294,7 +294,7 @@ sealed class Fx
     }
 
     // shared integrator: gravity, spin, bounce on the floor with friction, settle flat
-    void Step(ref Body b, float dt, float half, float restitution)
+    void Step(ref Body b, float dt, float half, float restitution, bool brass)
     {
         if (!b.Awake) return;
         b.V.Y -= 9.8f * dt; b.P += b.V * dt;
@@ -302,7 +302,14 @@ sealed class Fx
         if (b.P.Y < half)
         {
             b.P.Y = half;
-            if (b.V.Y < -0.4f) { b.Bounces++; b.V.Y *= -restitution; } else b.V.Y = 0;
+            if (b.V.Y < -0.4f)
+            {
+                float s = MathF.Min(1, -b.V.Y / 3);
+                if (brass) { if (b.Bounces < 2) Sfx.At(b.P, (x, p, v) => x.Tink(p, v), s); }
+                else Sfx.At(b.P, (x, p, v) => x.Mag(p, v), s);
+                b.Bounces++; b.V.Y *= -restitution;
+            }
+            else b.V.Y = 0;
             b.V.X *= 0.6f; b.V.Z *= 0.6f; b.W *= 0.55f;
             var ax = b.Q * Vector3.Up; var flat = V(ax.X, 0, ax.Z);
             if (flat.LengthSquared() < 1e-4f) flat = Vector3.Right;
@@ -316,14 +323,14 @@ sealed class Fx
         for (int i = 0; i < _brassN; i++)
         {
             if (!_brass[i].Awake) continue;
-            Step(ref _brass[i], dt, 0.009f, 0.38f);
+            Step(ref _brass[i], dt, 0.009f, 0.38f, true);
             _brassMm.SetInstanceTransform(i, new Transform3D(new Basis(_brass[i].Q), _brass[i].P));
         }
         _brassMm.VisibleInstanceCount = _brassN;
         foreach (var m in _mags)
         {
             if (!m.B.Awake) continue;
-            Step(ref m.B, dt, 0.016f, 0.25f);
+            Step(ref m.B, dt, 0.016f, 0.25f, false);
             m.Node.Transform = new Transform3D(new Basis(m.B.Q), m.B.P);
         }
     }

@@ -360,7 +360,8 @@ public sealed class SoldierRig
         Out.EjectDir = rifleM.Basis * Gun.EjectDir;
         Out.SwivelF = rifleM * Gun.SwivelF;
         Out.SwivelR = rifleM * Gun.SwivelR;
-        Out.Mag = _p.Local(mag);
+        // the magazine where it was last seen: a dropped one leaves from there (the concept used last frame's matrix)
+        if (magState != 2) Out.Mag = _p.Local(mag);
         Out.MagVisible = magState != 2;
         Out.Steps = steps;
     }

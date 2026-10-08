@@ -78,6 +78,7 @@ public partial class Main : Node3D
     public override void _ExitTree()
     {
         _feed?.Dispose();
+        Sfx.Current = null; Sfx.Locate = null;
         if (SoldierView.ProbeFeet) GD.Print($"feet: planted-foot travel {SoldierView.SlipSum:0.000} m over {SoldierView.BodySum:0.0} m of body travel ({100 * SoldierView.SlipSum / Math.Max(1e-9, SoldierView.BodySum):0.00}%)");
         Art.Clear(); Sling.ClearMaterials(); SoldierView.ClearMaterials(); MapView.ClearMaterials();
     }
@@ -118,6 +119,18 @@ public partial class Main : Node3D
         _scenarioIdx = Math.Max(0, Array.FindIndex(_scenarios, p => Path.GetFileNameWithoutExtension(p) == want || Path.GetFullPath(p) == Path.GetFullPath(want)));
 
         BuildStatic();
+        // procedural sound (sfx.js); none in --shots runs, which may have no audio device
+        if (!_shotsMode)
+        {
+            Sfx.Current = new Sfx(this);
+            Sfx.Locate = p =>
+            {
+                // louder near the camera's centre; pan by the position on screen
+                float d = new Vector2(p.X - _target.X, p.Z - _target.Z).Length();
+                float x = _cam.IsPositionBehind(p) ? 0 : _cam.UnprojectPosition(p).X / GetViewport().GetVisibleRect().Size.X * 2 - 1;
+                return (Math.Clamp(x * 0.8f, -1, 1), 1 / (1 + d * 0.07f));
+            };
+        }
         if (_show != null) StartShowcase(); else StartMatch();
     }
 
@@ -199,6 +212,9 @@ public partial class Main : Node3D
                 case EventType.ReloadStart:
                     _soldiers[e.Agent].ReloadEmpty = e.Value > 0;
                     break;
+                case EventType.DryFire:
+                    Sfx.At(_soldiers[e.Agent].Root.Position, (s, p, v) => s.Dry(p, v));
+                    break;
             }
         }
         return true;
@@ -219,6 +235,7 @@ public partial class Main : Node3D
         {
             if (surf == Surface.Soldier) _fx.Blood(end, dir, 1);
             else _fx.Impact(kind, end, normal, dir);
+            Sfx.At(end, (s, p, v) => s.Impact(surf == Surface.Soldier ? "flesh" : kind, p, v));
         });
     }
 
@@ -248,6 +265,7 @@ public partial class Main : Node3D
     {
         if (_shotPending >= 0) { SaveShot(); return; }
         if (_bench) BenchFrame();
+        Sfx.Current?.Mix();
         // frames for --shots advance by a fixed 1/60 s, so they do not depend on how fast this machine renders
         if (_shotsMode) delta = 1.0 / 60;
         HandleCameraKeys((float)delta);
@@ -309,7 +327,8 @@ public partial class Main : Node3D
                  $"mean {mean:0.0} fps, 1% low {low:0.0} fps, worst frame {sorted[0]:0.0} ms, grass {_map?.GrassCount}, " +
                  $"{RenderingServer.GetRenderingInfo(RenderingServer.RenderingInfo.TotalDrawCallsInFrame)} draw calls, " +
                  $"{RenderingServer.GetRenderingInfo(RenderingServer.RenderingInfo.TotalPrimitivesInFrame) / 1000} k primitives; " +
-                 $"CPU per frame: soldiers {_sumSol / sorted.Count:0.00} ms, effects {_sumFx / sorted.Count:0.00} ms, map {_sumMap / sorted.Count:0.00} ms (the match runs on its own thread)");
+                 $"CPU per frame: soldiers {_sumSol / sorted.Count:0.00} ms, effects {_sumFx / sorted.Count:0.00} ms, map {_sumMap / sorted.Count:0.00} ms (the match runs on its own thread)" +
+                 (Sfx.Current is { } sfx ? $"; sound peak {sfx.Peak:0.00}, up to {sfx.MaxVoices} voices" : ""));
         GetTree().Quit();
     }
 
@@ -346,6 +365,7 @@ public partial class Main : Node3D
                 case Key.Bracketright: _scenarioIdx = (_scenarioIdx + 1) % Math.Max(1, _scenarios.Length); StartMatch(); break;
                 case Key.Bracketleft: _scenarioIdx = (_scenarioIdx + _scenarios.Length - 1) % Math.Max(1, _scenarios.Length); StartMatch(); break;
                 case Key.Tab: _debug = !_debug; break;
+                case Key.M: if (Sfx.Current != null) Sfx.Current.Enabled = !Sfx.Current.Enabled; break;
                 case Key.L: _labels = !_labels; break;
                 case Key.F: FollowNext(k.ShiftPressed ? -1 : 1); break;
                 case Key.G: _follow = -1; break;
@@ -594,7 +614,7 @@ public partial class Main : Node3D
             $"{_title}    [{_scenarioIdx + 1}/{_scenarios.Length}]\n" +
             $"t = {f.Time:0.0} s    blue {f.Alive[0]}/{m.TeamSize(0)}    red {f.Alive[1]}/{m.TeamSize(1)}    speed ×{_speed:0.###}{state}" +
             (_debug ? "\n" : "    Tab debug") + (!_debug ? "" :
-            "Tab debug off · Space pause · . step · +/- speed · R restart · N next seed · [ ] scenario · L labels · C cones · H cut walls · Shift+A autoplay " + (_auto ? "on" : "off") + "\n" +
+            "Tab debug off · Space pause · . step · +/- speed · R restart · N next seed · [ ] scenario · L labels · C cones · H cut walls · M sound · Shift+A autoplay " + (_auto ? "on" : "off") + "\n" +
             "WASD / RMB drag pan · Q/E rotate · wheel zoom · F / Shift+F follow soldier · G free camera") + (_follow >= 0 ? $"    following {_follow}" : "");
         _banner.Text = f.Over
             ? (f.Result.Winner < 0 ? "DRAW" : f.Result.Winner == 0 ? "BLUE WINS" : "RED WINS") + $"  ({f.Result.Reason}, {f.Time:0.0} s)"

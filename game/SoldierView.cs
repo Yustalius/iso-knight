@@ -36,7 +36,7 @@ sealed class SoldierView
     readonly Fx _fx;
     readonly Ragdoll _rag;
     readonly Vector3[] _jPrev, _jCur;
-    float _deadT, _poolT, _sampleDt = 1 / 60f;
+    float _deadT, _poolT, _thumpT, _sampleDt = 1 / 60f;
     bool _sampled;
     MeshInstance3D? _pool;
     Vector3 _stag, _stagV;              // "a step back" when hit: a small visual offset on a spring
@@ -135,12 +135,26 @@ sealed class SoldierView
         MuzzleW = body * Rig.Out.Muzzle; BarrelW = Root.Basis * Rig.Out.Barrel;
         if (shot)
         {
+            Sfx.At(MuzzleW, (s, p, v) => s.Shot(p, v));
             _fx.MuzzleFlash(MuzzleW, BarrelW);
             _fx.Eject(body * Rig.Out.Eject, Root.Basis * Rig.Out.EjectDir, vel);
         }
-        // the empty magazine drops out at the start of every reload
-        if (inp.Reloading && _prevReloadT < SoldierRig.Reload.MagOut && inp.ReloadT >= SoldierRig.Reload.MagOut)
+        // the empty magazine drops out at the start of every reload; the reload's sounds at its phases
+        bool Crossed(float at) => inp.Reloading && _prevReloadT < at && inp.ReloadT >= at;
+        if (Crossed(SoldierRig.Reload.MagOut))
+        {
             _fx.DropMag(body * Rig.Out.Mag, vel * 0.8f);
+            Sfx.At(Root.Position, (s, p, v) => s.MagOut(p, v));
+        }
+        if (Crossed(SoldierRig.Reload.Grab)) Sfx.At(Root.Position, (s, p, v) => s.Click(p, v));
+        if (Crossed(SoldierRig.Reload.Seat)) Sfx.At(Root.Position, (s, p, v) => s.MagIn(p, v));
+        if (ReloadEmpty && Crossed(SoldierRig.Reload.Bolt)) Sfx.At(Root.Position, (s, p, v) => s.Bolt(p, v));
+        if (Rig.Out.Steps != 0)
+        {
+            float loud = Clamp(vel.Length() / 2, 0.4f, 1.2f);
+            Sfx.At(Root.Position, (s, p, v) => s.Step(p, v), loud);
+            if (vel.Length() > 2.2f) _fx.Emit("dust", Root.Position + new Vector3(0, 0.04f, 0), -vel.Normalized() * 0.3f, 3, 0.5f, 0.3f);
+        }
         _prevReloadT = inp.Reloading ? inp.ReloadT : 0;
         // joint velocities of the living body, for the ragdoll
         if (dt > 0) { Array.Copy(_jCur, _jPrev, _jCur.Length); _rag.Sample(body, _jCur); _sampleDt = dt; _sampled = true; }
@@ -183,6 +197,13 @@ sealed class SoldierView
         if (dt <= 0) return;
         _deadT += dt;
         if (_rag.Sleep < 1.5f) { _rag.Step(dt); Rig.Pose.Apply(_sk); }
+        if (_rag.ImpactSpeed > 2 && _deadT - _thumpT > 0.07f)
+        {
+            float k = Clamp(_rag.ImpactSpeed / 4, 0.3f, 1.2f);
+            Sfx.At(_rag.Spine, (s, p, v) => s.Impact("body", p, v), k);
+            _thumpT = _deadT;
+        }
+        _rag.ImpactSpeed = 0;
         var rifle = body * Rig.Pose.Local(Rig.Pose.Find("Rifle"));
         _sling.Step(dt, rifle * SoldierRig.Gun.SwivelF, rifle * SoldierRig.Gun.SwivelR, -cam.GlobalBasis.Z);
         // blood spreads under the chest once the body has come to rest

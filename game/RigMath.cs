@@ -58,7 +58,8 @@ static class RigMath
             var c = a.Cross(b);
             q = new Quaternion(c.X, c.Y, c.Z, r);
         }
-        return q.Normalized();
+        q = q.Normalized();
+        return q.IsFinite() ? q : Quaternion.Identity;
     }
 }
 
@@ -104,10 +105,16 @@ public sealed class Pose
     public Transform3D Local(int i) => new(new Basis(Rot[i]).Scaled(Scale[i]), Pos[i]);
     public Transform3D World(int i) => Parent[i] < 0 ? Local(i) : World(Parent[i]) * Local(i);
     public Vector3 WorldPos(int i) => Parent[i] < 0 ? Pos[i] : World(Parent[i]) * Pos[i];
-    public Quaternion WorldRot(int i) => Parent[i] < 0 ? Rot[i] : WorldRot(Parent[i]) * Rot[i];
+    public Quaternion WorldRot(int i) => (Parent[i] < 0 ? Rot[i] : WorldRot(Parent[i]) * Rot[i]).Normalized();
 
-    /// <summary>Give bone i this world rotation (worldRotation of rig-core.js).</summary>
-    public void SetWorldRot(int i, Quaternion q) => Rot[i] = Parent[i] < 0 ? q : (WorldRot(Parent[i]).Inverse() * q).Normalized();
+    /// <summary>Give bone i this world rotation (worldRotation of rig-core.js). A degenerate input (a ragdoll's joints
+    /// on top of each other) keeps the bone as it was.</summary>
+    public void SetWorldRot(int i, Quaternion q)
+    {
+        if (!q.IsFinite() || q.LengthSquared() < 1e-12f) return;
+        q = q.Normalized();
+        Rot[i] = Parent[i] < 0 ? q : (WorldRot(Parent[i]).Inverse() * q).Normalized();
+    }
 
     /// <summary>Analytic two-bone IK: the bend plane passes through pole (model space).</summary>
     public void SolveLimb(int upper, int lower, int end, Vector3 target, Vector3 pole)

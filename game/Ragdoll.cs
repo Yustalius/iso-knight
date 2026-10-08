@@ -45,7 +45,7 @@ sealed class Ragdoll
     readonly Collider[] _walls;
     Transform3D _root, _rootInv; Quaternion _rootQi;
     float _hPrev = 1 / 240f, _t;
-    public float Sleep;
+    public float Sleep, ImpactSpeed;
     public bool Active;
 
     Pt At(string n) => _p[_i[n]];
@@ -221,6 +221,7 @@ sealed class Ragdoll
         if (x.P.Y < floor)
         {
             float vy = (x.P.Y - x.Q.Y) / h;
+            if (-vy > ImpactSpeed) ImpactSpeed = -vy;   // for the thud of a body hitting the ground
             x.Cn = MathF.Max(x.Cn, -vy); x.Contact = true;
             x.P.Y = floor; if (x.Q.Y < floor) x.Q.Y = floor;
         }
