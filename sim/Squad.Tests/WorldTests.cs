@@ -98,3 +98,55 @@ public class WorldTests
         for (int k = 1; k < n; k++) Assert.True(d2[k] >= d2[k - 1]);
     }
 }
+
+public class MapGenTests
+{
+    [Fact]
+    public void GeneratedMapsAreValidForAllTeamSizes()
+    {
+        var sizes = new[] { (1, 1), (2, 2), (4, 4), (4, 6), (7, 5), (10, 10) };
+        int seeds = 0;
+        foreach (var (a, b) in sizes)
+            for (ulong seed = 1; seed <= 25; seed++)
+            {
+                var m = MapGen.Generate(seed, new MapGenOptions { TeamA = a, TeamB = b, Symmetric = seed % 3 != 0 });
+                Assert.True(MapGen.Validate(m, out string why), why);
+                Assert.True(m.Obstacles.Count > 5);
+                seeds++;
+            }
+        Assert.Equal(150, seeds);
+    }
+
+    [Fact]
+    public void SizeGrowsWithPlayers()
+    {
+        Assert.InRange(MapGen.SideFor(2), 23, 25);
+        Assert.InRange(MapGen.SideFor(20), 59, 61);
+        var small = MapGen.Generate(3, new MapGenOptions { TeamA = 1, TeamB = 1 });
+        var big = MapGen.Generate(3, new MapGenOptions { TeamA = 10, TeamB = 10 });
+        Assert.True(big.Width > small.Width * 2);
+    }
+
+    [Fact]
+    public void SymmetricMapsMirror()
+    {
+        var m = MapGen.Generate(11, new MapGenOptions { TeamA = 4, TeamB = 4 });
+        int n = m.Obstacles.Count / 2;
+        for (int k = 0; k < n; k++)
+        {
+            var a = m.Obstacles[k]; var b = m.Obstacles[n + k];
+            Assert.Equal(m.Width - a.A.X, b.B.X, 9);
+            Assert.Equal(m.Height - a.A.Y, b.B.Y, 9);
+        }
+    }
+
+    [Fact]
+    public void MapJsonRoundTrips()
+    {
+        var m = MapGen.Generate(5, new MapGenOptions());
+        var back = SimJson.ReadMap(SimJson.WriteMap(m));
+        Assert.Equal(m.Obstacles.Count, back.Obstacles.Count);
+        Assert.Equal(m.Spawns.Count, back.Spawns.Count);
+        for (int k = 0; k < m.Obstacles.Count; k++) Assert.Equal(m.Obstacles[k].Kind, back.Obstacles[k].Kind);
+    }
+}

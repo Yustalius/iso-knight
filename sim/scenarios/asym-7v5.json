@@ -1,0 +1,8 @@
+{
+  "name": "asym-7v5", "about": "Seven against five.",
+  "map": { "gen": { "symmetric": true } }, "rules": { "roundTime": 180 },
+  "teams": [
+    { "size": 7, "mix": { "rifleman": 3, "flanker": 2, "holder": 2 } },
+    { "size": 5, "mix": { "rifleman": 2, "marksman": 1, "holder": 1, "hunter": 1 } }
+  ]
+}

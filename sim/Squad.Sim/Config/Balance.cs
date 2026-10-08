@@ -97,8 +97,8 @@ public sealed class PerceptionBalance
     public double DetectDecay = 0.6;        // per second while not visible
     public double SuspectLevel = 0.35;      // a contact appears ("something is there") at this level, seen at 1
     public double BushDepth = 0.5;          // concealment: visibility × e^(−depth/BushDepth) through foliage
-    public double NoiseAngle = 1.5 * DMath.Deg, NoiseRange = 0.06, NoiseTau = 1.5;  // drifting estimate error
-    public double FocusNoise = 0.5;         // error factor after watching a target for FocusTime
+    public double NoiseAngle = 0.8 * DMath.Deg, NoiseRange = 0.06, NoiseTau = 1.5;  // drifting estimate error
+    public double FocusNoise = 0.35;        // error factor after watching a target for FocusTime
     public double FocusTime = 1.0;
     public double ForgetTime = 25, ClearRadius = 3, RadioDelay = 0.5;
     public double LostSpeed = 1.5, MaxUncertainty = 15;

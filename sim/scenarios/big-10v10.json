@@ -1,0 +1,8 @@
+{
+  "name": "big-10v10", "about": "Full size.",
+  "map": { "gen": { "symmetric": true } }, "rules": { "roundTime": 240 },
+  "teams": [
+    { "size": 10, "mix": { "rifleman": 4, "flanker": 2, "holder": 2, "marksman": 1, "hunter": 1 } },
+    { "size": 10, "mix": { "rifleman": 4, "rusher": 2, "holder": 2, "kiter": 1, "flanker": 1 } }
+  ]
+}

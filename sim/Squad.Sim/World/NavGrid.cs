@@ -53,21 +53,37 @@ public sealed class NavGrid
         H = Math.Max(1, (int)Math.Ceiling(world.Height / Cell));
         Blocked = new bool[W * H];
         Cost = new float[W * H];
-        var obs = world.Obstacles;
+        var scratch = new WorldScratch(world);
+        var v = new CellVisitor { Obs = world.Obstacles, Radius = radius };
         for (int y = 0; y < H; y++)
             for (int x = 0; x < W; x++)
             {
                 int i = y * W + x;
                 Vec2 c = Center(i);
-                Cost[i] = 1;
-                if (c.X < radius || c.Y < radius || c.X > world.Width - radius || c.Y > world.Height - radius) { Blocked[i] = true; continue; }
-                foreach (ref readonly var o in obs.AsSpan())
-                {
-                    double d = Geometry.DistanceToSegment(c, o.A, o.B);
-                    if (o.BlocksMove) { if (d < o.R + radius - 0.06) { Blocked[i] = true; break; } }
-                    else if (d < o.R) Cost[i] = 1.6f;
-                }
+                if (c.X < radius || c.Y < radius || c.X > world.Width - radius || c.Y > world.Height - radius) { Blocked[i] = true; Cost[i] = 1; continue; }
+                v.C = c; v.Blocked = false; v.Cost = 1;
+                world.Nearby(c, radius + 0.05, ref v, scratch);
+                Blocked[i] = v.Blocked;
+                Cost[i] = v.Cost;
             }
+    }
+
+    struct CellVisitor : IObstacleVisitor
+    {
+        public Obstacle[] Obs;
+        public Vec2 C;
+        public double Radius;
+        public bool Blocked;
+        public float Cost;
+
+        public bool Visit(int i)
+        {
+            ref var o = ref Obs[i];
+            double d = Geometry.DistanceToSegment(C, o.A, o.B);
+            if (o.BlocksMove) { if (d < o.R + Radius - 0.06) { Blocked = true; return false; } }
+            else if (d < o.R) Cost = 1.6f;
+            return true;
+        }
     }
 
     public Vec2 Center(int i) => new(((i % W) + 0.5) * Cell, ((i / W) + 0.5) * Cell);

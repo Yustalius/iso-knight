@@ -1,0 +1,8 @@
+{
+  "name": "asym-4v6", "about": "Outnumbered: four against six.",
+  "map": { "gen": { "symmetric": true } }, "rules": { "roundTime": 150 },
+  "teams": [
+    { "size": 4, "mix": { "rifleman": 2, "holder": 2 } },
+    { "size": 6, "mix": { "rifleman": 3, "rusher": 2, "flanker": 1 } }
+  ]
+}

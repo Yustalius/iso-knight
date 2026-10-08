@@ -94,3 +94,20 @@ public class DeterminismTests
         Assert.Equal(0, after - before);
     }
 }
+
+public class ConfigJsonTests
+{
+    [Fact]
+    public void ConfigRoundTripsExactly()
+    {
+        var c = TestUtil.Config(MapGen.Generate(4, new MapGenOptions { TeamA = 3, TeamB = 2 }), 3, 2, seed: 123456789012345UL);
+        c.RandomizeBalance = 0.15; c.Rules.FriendlyFire = true; c.Rules.ReachZone = "goal"; c.Teams[1].Members[0].Omniscient = true;
+        c.Balance.Weapon.Rpm = 777.123456789;
+        var back = SimJson.ReadConfig(SimJson.WriteConfig(c));
+        Assert.Equal(SimJson.WriteConfig(c), SimJson.WriteConfig(back));
+        var m1 = Match.Create(c); var m2 = Match.Create(back);
+        var acts = new AgentAction[m1.Count];
+        for (int k = 0; k < 300; k++) { m1.Step(acts); m2.Step(acts); }
+        Assert.Equal(m1.Hash(), m2.Hash());
+    }
+}

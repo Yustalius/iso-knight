@@ -87,4 +87,23 @@ public static class Geometry
         double L2 = d.LengthSq;
         return L2 > 1e-12 ? DMath.Clamp01((c - p).Dot(d) / L2) : 0;
     }
+
+    /// <summary>Shortest distance between segments a0–a1 and b0–b1.</summary>
+    public static double SegmentDistance(Vec2 a0, Vec2 a1, Vec2 b0, Vec2 b1)
+    {
+        if (SegmentsCross(a0, a1, b0, b1)) return 0;
+        return Math.Min(Math.Min(DistanceToSegment(a0, b0, b1), DistanceToSegment(a1, b0, b1)),
+                        Math.Min(DistanceToSegment(b0, a0, a1), DistanceToSegment(b1, a0, a1)));
+    }
+
+    static bool SegmentsCross(Vec2 a0, Vec2 a1, Vec2 b0, Vec2 b1)
+    {
+        double d1 = (a1 - a0).Cross(b0 - a0), d2 = (a1 - a0).Cross(b1 - a0);
+        double d3 = (b1 - b0).Cross(a0 - b0), d4 = (b1 - b0).Cross(a1 - b0);
+        return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
+    }
+
+    /// <summary>Gap between the surfaces of two obstacles (negative if they overlap).</summary>
+    public static double Gap(in Obstacle a, in Obstacle b) => SegmentDistance(a.A, a.B, b.A, b.B) - a.R - b.R;
 }
+

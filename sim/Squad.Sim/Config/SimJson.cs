@@ -41,8 +41,13 @@ public static class SimJson
         return m;
     }
 
-    public static string WriteMap(MapData m)
+    /// <summary>Map as JSON. Rounded to millimetres for hand-editing; exact (round = false) inside replay headers.</summary>
+    public static string WriteMap(MapData m, bool round = true) => MapNode(m, round).ToJsonString();
+
+    static JsonObject MapNode(MapData m, bool round)
     {
+        double R(double x) => round ? Math.Round(x, 3) : x;
+        JsonArray Arr(Vec2 v) => new(R(v.X), R(v.Y));
         var o = new JsonObject { ["name"] = m.Name, ["width"] = R(m.Width), ["height"] = R(m.Height) };
         var obs = new JsonArray();
         foreach (var x in m.Obstacles)
@@ -61,7 +66,73 @@ public static class SimJson
         var zs = new JsonArray();
         foreach (var z in m.Zones) zs.Add(new JsonObject { ["name"] = z.Name, ["at"] = Arr(z.Center), ["r"] = R(z.Radius) });
         o["zones"] = zs;
-        return o.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = false });
+        return o;
+    }
+
+    // ---------- whole match configs (replay headers) ----------
+
+    public static string WriteConfig(MatchConfig c)
+    {
+        var o = new JsonObject
+        {
+            ["seed"] = c.Seed.ToString(CultureInfo.InvariantCulture),
+            ["randomizeBalance"] = c.RandomizeBalance,
+            ["rules"] = Fields(c.Rules),
+            ["balance"] = Fields(c.Balance),
+            ["map"] = MapNode(c.Map, false)
+        };
+        var teams = new JsonArray();
+        foreach (var t in c.Teams)
+        {
+            var ms = new JsonArray();
+            foreach (var a in t.Members) ms.Add(Fields(a));
+            teams.Add(ms);
+        }
+        o["teams"] = teams;
+        return o.ToJsonString();
+    }
+
+    public static MatchConfig ReadConfig(string json)
+    {
+        var o = JsonNode.Parse(json)!.AsObject();
+        var c = new MatchConfig
+        {
+            Seed = ulong.Parse((string)o["seed"]!, CultureInfo.InvariantCulture),
+            RandomizeBalance = D(o["randomizeBalance"]),
+            Map = ReadMap(o["map"]!.AsObject())
+        };
+        Apply(c.Rules, o["rules"] as JsonObject);
+        Apply(c.Balance, o["balance"] as JsonObject);
+        foreach (var t in o["teams"]!.AsArray())
+        {
+            var team = new TeamSetup();
+            foreach (var a in t!.AsArray()) { var s = new AgentSetup(); Apply(s, a as JsonObject); team.Members.Add(s); }
+            c.Teams.Add(team);
+        }
+        return c;
+    }
+
+    /// <summary>Public fields of an object as JSON (numbers exact), recursing into nested classes.</summary>
+    static JsonObject Fields(object x)
+    {
+        var o = new JsonObject();
+        foreach (var f in x.GetType().GetFields(BindingFlags.Public | BindingFlags.Instance))
+        {
+            var v = f.GetValue(x);
+            o[f.Name] = v switch
+            {
+                null => null,
+                double d => d,
+                int i => i,
+                ulong u => u,
+                bool b => b,
+                string s => s,
+                double[] arr => new JsonArray(arr.Select(z => (JsonNode)z).ToArray()),
+                _ when f.FieldType.IsClass => Fields(v),
+                _ => throw new NotSupportedException($"{x.GetType().Name}.{f.Name}")
+            };
+        }
+        return o;
     }
 
     public static ObstacleKind ParseKind(string s) => s.ToLowerInvariant() switch
@@ -105,6 +176,4 @@ public static class SimJson
         ? double.Parse((string)n!, CultureInfo.InvariantCulture) : (double)n;
     public static double Num(JsonObject o, string key, double def) => o[key] is { } n ? D(n) : def;
     public static Vec2 V(JsonNode? n) { var a = n!.AsArray(); return new Vec2(D(a[0]), D(a[1])); }
-    static JsonArray Arr(Vec2 v) => new(R(v.X), R(v.Y));
-    static double R(double x) => Math.Round(x, 3);
 }

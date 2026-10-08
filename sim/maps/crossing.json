@@ -1,0 +1,15 @@
+{
+  "name": "crossing", "width": 24, "height": 40,
+  "obstacles": [
+    { "kind": "lowwall", "a": [3, 7], "b": [7, 7] },     { "kind": "lowwall", "a": [15, 9], "b": [19, 9] },
+    { "kind": "crate", "a": [10, 11] },                   { "kind": "crate", "a": [4, 13] },
+    { "kind": "lowwall", "a": [16, 15], "b": [20, 15] }, { "kind": "lowwall", "a": [2, 18], "b": [6, 18] },
+    { "kind": "crate", "a": [17, 20] },                   { "kind": "crate", "a": [18, 20.9] },
+    { "kind": "lowwall", "a": [4, 23], "b": [8, 23] },   { "kind": "lowwall", "a": [15, 25], "b": [19, 25] },
+    { "kind": "crate", "a": [11, 27] },                   { "kind": "bush", "a": [3, 28], "b": [5, 29], "r": 0.9 },
+    { "kind": "lowwall", "a": [16, 31], "b": [20, 31] }, { "kind": "lowwall", "a": [3, 33], "b": [7, 33] },
+    { "kind": "highwall", "a": [10.5, 22.5], "b": [13.5, 22.5] }
+  ],
+  "spawns": [[6, 1, 18, 3], [11.5, 19.5, 12.5, 20.5]],
+  "zones": [{ "name": "goal", "at": [12, 37], "r": 2.5 }]
+}

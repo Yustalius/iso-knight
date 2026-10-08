@@ -19,12 +19,15 @@ public sealed class WorldScratch
 {
     internal readonly int[] ObStamp;
     internal int ObGen;
-    internal readonly NavScratch Nav;
+    readonly World _w;
+    NavScratch? _nav;
+    internal NavScratch Nav => _nav ??= new NavScratch(_w.Nav);
 
     public WorldScratch(World w)
     {
+        _w = w;
         ObStamp = new int[Math.Max(1, w.Obstacles.Length)];
-        Nav = new NavScratch(w.Nav);
+        if (w.Nav != null) _nav = new NavScratch(w.Nav);   // up front, so no step allocates (null only while the world is built)
     }
 
     internal int NextGen()

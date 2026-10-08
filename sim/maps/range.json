@@ -1,0 +1,8 @@
+{
+  "name": "range", "width": 24, "height": 30,
+  "obstacles": [
+    { "kind": "lowwall", "a": [9, 5], "b": [15, 5] },
+    { "kind": "crate", "a": [5, 16] }, { "kind": "crate", "a": [19, 18] }, { "kind": "lowwall", "a": [10, 21], "b": [13, 21] }
+  ],
+  "spawns": [[9, 2, 15, 3.5], [5, 22, 19, 27]]
+}
