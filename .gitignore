@@ -1,3 +1,7 @@
 node_modules/
 shots/
 *.log
+sim/**/bin/
+sim/**/obj/
+sim/out/
+*.rpl

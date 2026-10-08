@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Rule-based bots. They see the match only through the public AgentView. -->
+  <ItemGroup>
+    <ProjectReference Include="..\Squad.Sim\Squad.Sim.csproj" />
+  </ItemGroup>
+</Project>

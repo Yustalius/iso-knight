@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The game rules. No dependencies: Godot, the arena and the trainer all run this same library. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Squad.Tests" />
+  </ItemGroup>
+</Project>
