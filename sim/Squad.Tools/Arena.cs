@@ -75,7 +75,17 @@ static class Arena
             foreach (var r in rows.OrderBy(r => r.Seed))
                 Console.WriteLine($"    seed {r.Seed,-5} {(r.Swapped ? "swapped" : "       ")} {r.SizeA}v{r.SizeB}  {(r.Winner < 0 ? "draw" : r.Winner == 0 ? "A" : "B"),-4} {r.Reason,-11} {r.Time,6:0.0} s");
         var bySize = rows.GroupBy(r => $"{r.SizeA}v{r.SizeB}").ToList();
-        if (bySize.Count > 1)
+        if (bySize.Count > 12)
+        {
+            // many compositions (random sizes): what matters is the head-count difference
+            Console.WriteLine("  A score by head-count difference (A − B):");
+            foreach (var g in rows.GroupBy(r => r.SizeA - r.SizeB).OrderBy(g => g.Key))
+            {
+                var (sp, sl, sh) = Score(g);
+                Console.WriteLine($"    {g.Key,+3:+0;-0;0}   {g.Count(),4} matches  {sp,5:P0} [{sl:P0}–{sh:P0}]");
+            }
+        }
+        else if (bySize.Count > 1)
         {
             Console.WriteLine("  A score by size:");
             foreach (var g in bySize.OrderBy(g => g.First().SizeA - g.First().SizeB).ThenBy(g => g.Key))
