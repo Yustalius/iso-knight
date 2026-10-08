@@ -1,0 +1,7 @@
+{
+  "name": "train-turret", "about": "Stage 2b: 1v1 against a stationary gun of normal skill.",
+  "learner": 0,
+  "map": { "file": "../maps/duel.json" }, "rules": { "roundTime": 60 },
+  "reward": { "win": 1, "loss": -1, "draw": -0.5, "damageDealt": 0.5, "damageTaken": 0.5, "kill": 0.3, "death": 0.3, "timePenalty": 0.005 },
+  "teams": [ { "size": 1, "brain": "rifleman" }, { "size": 1, "brain": "turret" } ]
+}

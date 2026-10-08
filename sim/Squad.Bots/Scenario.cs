@@ -19,6 +19,8 @@ public sealed class Scenario
     public int RandomSizeMin, RandomSizeMax;
     /// <summary>Per-strategy field overrides, e.g. { "holder": { "awareness": 0 } }.</summary>
     public JsonObject? Params;
+    /// <summary>Reward weights for training ("reward" section); the rules and bots ignore it.</summary>
+    public JsonObject? Reward;
     public string BaseDir = ".";
 
     public sealed class TeamSpec
@@ -69,6 +71,7 @@ public sealed class Scenario
         s.RandomizeBalance = SimJson.Num(o, "randomizeBalance", 0);
         s.Tactics = (bool?)o["tactics"] ?? true;
         s.Params = o["params"] as JsonObject;
+        s.Reward = o["reward"] as JsonObject;
         if (o["randomSizes"] is JsonArray rs) { s.RandomSizeMin = (int)SimJson.D(rs[0]); s.RandomSizeMax = (int)SimJson.D(rs[1]); }
         var teams = o["teams"]!.AsArray();
         for (int t = 0; t < 2; t++)
@@ -97,27 +100,45 @@ public sealed class Scenario
     }
 
     /// <summary>Match config and bots for one seed. Team sizes, the strategy of each member and generated maps all follow from the seed.</summary>
-    /// <param name="swap">Team spec 0 plays on side 1 and the other way round (for fair arena runs on asymmetric maps).</param>
-    public Built Build(ulong seed, int sizeA = 0, int sizeB = 0, bool swap = false)
+    /// <summary>Team sizes a build with this seed will have (before swapping).</summary>
+    public (int a, int b) SizesFor(ulong seed, int sizeA = 0, int sizeB = 0)
     {
         var r = new Rng(seed, 0x5CE);
-        int[] sizes = { Teams[0].Size, Teams[1].Size };
-        if (RandomSizeMax > 0) { sizes[0] = r.Range(RandomSizeMin, RandomSizeMax + 1); sizes[1] = r.Range(RandomSizeMin, RandomSizeMax + 1); }
-        if (sizeA > 0) sizes[0] = sizeA;
-        if (sizeB > 0) sizes[1] = sizeB;
+        return DrawSizes(ref r, sizeA, sizeB);
+    }
+
+    (int a, int b) DrawSizes(ref Rng r, int sizeA, int sizeB)
+    {
+        int a = Teams[0].Size, b = Teams[1].Size;
+        if (RandomSizeMax > 0) { a = r.Range(RandomSizeMin, RandomSizeMax + 1); b = r.Range(RandomSizeMin, RandomSizeMax + 1); }
+        if (sizeA > 0) a = sizeA;
+        if (sizeB > 0) b = sizeB;
+        return (a, b);
+    }
+
+    /// <summary>The map of this scenario: the file, or a generated one for these team sizes.</summary>
+    public MapData MapFor(ulong mapSeed, int sizeA, int sizeB)
+    {
+        if (MapFile != null) return SimJson.ReadMap(File.ReadAllText(Path.Combine(BaseDir, MapFile)));
+        var opt = new MapGenOptions { TeamA = sizeA, TeamB = sizeB };
+        SimJson.Apply(opt, MapGen);
+        return Sim.MapGen.Generate(mapSeed * 7919 + 13, opt);
+    }
+
+    /// <param name="swap">Team spec 0 plays on side 1 and the other way round (for fair arena runs on asymmetric maps).</param>
+    /// <param name="map">Use this map instead of loading or generating one (map pools in training).</param>
+    public Built Build(ulong seed, int sizeA = 0, int sizeB = 0, bool swap = false, MapData? map = null)
+    {
+        var r = new Rng(seed, 0x5CE);
+        var (a0, b0) = DrawSizes(ref r, sizeA, sizeB);
+        int[] sizes = { a0, b0 };
         var specs = swap ? new[] { Teams[1], Teams[0] } : Teams;
         if (swap) (sizes[0], sizes[1]) = (sizes[1], sizes[0]);
 
         var cfg = new MatchConfig { Seed = seed, RandomizeBalance = RandomizeBalance };
         SimJson.Apply(cfg.Rules, Rules);
         SimJson.Apply(cfg.Balance, Balance);
-        if (MapFile != null) cfg.Map = SimJson.ReadMap(File.ReadAllText(Path.Combine(BaseDir, MapFile)));
-        else
-        {
-            var opt = new MapGenOptions { TeamA = sizes[0], TeamB = sizes[1] };
-            SimJson.Apply(opt, MapGen);
-            cfg.Map = Sim.MapGen.Generate(seed * 7919 + 13, opt);
-        }
+        cfg.Map = map ?? MapFor(seed, sizes[0], sizes[1]);
 
         var brains = new List<IBrain?>();
         var skills = new List<BotSkill>();

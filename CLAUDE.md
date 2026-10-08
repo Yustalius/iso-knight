@@ -19,6 +19,19 @@
   по затронутым сценариям и `crosstab`: нет таймаутов-стоялок, нет стратегии, которая выигрывает у всех.
 - Если менялись правила, обновить эталон в `Golden.cs` только при осознанной смене `DMath`; хэши реплеев меняются вместе с правилами.
 
+## Обучение `train/` + `sim/Squad.Train`
+
+- Устройство и запуск — `docs/train.md`. Среда (`VecEnv`, `Codec`) — C#, собирается Native AOT в `train/native/squad.so`
+  (`train/build_native.sh`, в .gitignore); Python (`train/squad`) зовёт её через ctypes, буферы — numpy без копий.
+- После правок C# пересобрать библиотеку и прогнать `python3 train/tests/smoke.py` (numpy, без torch) и `dotnet test`.
+- Вход сети — только из `AgentView` (тест `HiddenEnemyDoesNotLeakIntoTheInput`). Любое изменение раскладки входа или
+  действий: поднять `Obs.Version`/`Act.Version` в `Codec.cs` и `OBS_VERSION`/`ACT_VERSION` в `train/squad/env.py`,
+  поправить константы в `train/squad/model.py`.
+- Новое в экспортах: исключения не должны выходить из `[UnmanagedCallersOnly]` (try/catch → `squad_error`).
+  Всё, что читается рефлексией (JSON → поля), должно быть в `TrimmerRootAssembly`, иначе AOT молча обрежет поля.
+- torch в облачной среде Claude: только `pip install torch` с PyPI целиком (~5 ГБ, CUDA-библиотеки нужны даже для CPU),
+  в отдельный venv в scratchpad; индекс CPU-сборок pytorch.org закрыт.
+
 ## Прототип рыцаря (three.js)
 
 ### Как проверять изменения

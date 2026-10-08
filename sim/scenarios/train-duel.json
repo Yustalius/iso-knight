@@ -1,0 +1,7 @@
+{
+  "name": "train-duel", "about": "Stage 3a: 1v1 on the duel map against a mix of rule bots.",
+  "learner": 0,
+  "map": { "file": "../maps/duel.json" }, "rules": { "roundTime": 75 },
+  "reward": { "win": 1, "loss": -1, "draw": -0.3, "damageDealt": 0.5, "damageTaken": 0.5, "kill": 0.3, "death": 0.3 },
+  "teams": [ { "size": 1, "brain": "rifleman" }, { "size": 1, "mix": { "rifleman": 1, "holder": 1, "hunter": 1, "kiter": 1 } } ]
+}

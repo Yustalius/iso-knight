@@ -57,14 +57,14 @@ public static class SimJson
             if (x.B != x.A) j["b"] = Arr(x.B);
             if (Math.Abs(x.R - dr) > 1e-9) j["r"] = R(x.R);
             if (Math.Abs(x.H - dh) > 1e-9) j["h"] = R(x.H);
-            obs.Add(j);
+            obs.Add((JsonNode)j);
         }
         o["obstacles"] = obs;
         var sp = new JsonArray();
-        foreach (var s in m.Spawns) sp.Add(new JsonArray(R(s.Min.X), R(s.Min.Y), R(s.Max.X), R(s.Max.Y)));
+        foreach (var s in m.Spawns) sp.Add((JsonNode)new JsonArray(R(s.Min.X), R(s.Min.Y), R(s.Max.X), R(s.Max.Y)));
         o["spawns"] = sp;
         var zs = new JsonArray();
-        foreach (var z in m.Zones) zs.Add(new JsonObject { ["name"] = z.Name, ["at"] = Arr(z.Center), ["r"] = R(z.Radius) });
+        foreach (var z in m.Zones) zs.Add((JsonNode)new JsonObject { ["name"] = z.Name, ["at"] = Arr(z.Center), ["r"] = R(z.Radius) });
         o["zones"] = zs;
         return o;
     }
@@ -85,8 +85,8 @@ public static class SimJson
         foreach (var t in c.Teams)
         {
             var ms = new JsonArray();
-            foreach (var a in t.Members) ms.Add(Fields(a));
-            teams.Add(ms);
+            foreach (var a in t.Members) ms.Add((JsonNode)Fields(a));
+            teams.Add((JsonNode)ms);
         }
         o["teams"] = teams;
         return o.ToJsonString();

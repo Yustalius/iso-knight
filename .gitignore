@@ -5,3 +5,6 @@ sim/**/bin/
 sim/**/obj/
 sim/out/
 *.rpl
+train/native/
+runs/
+__pycache__/

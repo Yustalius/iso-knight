@@ -1,0 +1,7 @@
+{
+  "name": "train-aim", "about": "Stage 1: three targets that walk a short beat and never shoot. Team 0 is the learner (a rifleman when run in the arena: the baseline).",
+  "learner": 0,
+  "map": { "file": "../maps/range.json" }, "rules": { "roundTime": 45 }, "tactics": false,
+  "reward": { "win": 1, "loss": -1, "draw": -0.5, "damageDealt": 1.0, "kill": 0.5, "timePenalty": 0.005 },
+  "teams": [ { "size": 1, "brain": "rifleman" }, { "size": 3, "brain": "dummy" } ]
+}

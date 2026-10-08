@@ -34,6 +34,7 @@ static void Usage() => Console.WriteLine("""
     Squad.Tools — headless simulation tools
       mapgen   [--players 7v5] [--seed 1] [--asym] [--out out/map.png] [--json out/map.json]
       render   --scenario F [--seed 1] [--from 0] [--to 60] [--every 5] [--cols 4] [--scale 12] [--focus 0|1|-1] [--out out/x.png]
+      render   --replay F.rpl [--every 3] ...      (frames of a recorded match, e.g. a trained network's)
       arena    --scenario F [--matches 200] [--threads N] [--seed 1] [--swap] [--sizes 4v6]
       crosstab --brains rifleman,holder,rusher [--size 3] [--matches 40] [--threads N] [--skill normal]
       bench    [--matches 6]
@@ -63,6 +64,7 @@ static void MapGenCmd(Args o)
 
 static void RenderCmd(Args o)
 {
+    if (o.Has("replay")) { RenderReplay(o); return; }
     var sc = Scenario.Load(o.Req("scenario"));
     ulong seed = o.U64("seed", 1);
     var (sa, sb) = o.Has("sizes") ? Args.Sizes(o.Get("sizes", "")) : (0, 0);
@@ -94,6 +96,41 @@ static void RenderCmd(Args o)
     Renderer.SavePng(sheet, outPath);
     foreach (var f in frames) f.Dispose();
     Console.WriteLine($"{frames.Count} frames → {outPath}; result: {(m.Over ? $"winner {m.Result.Winner} ({m.Result.Reason}) at {m.Time:0.0}s" : "running")}");
+}
+
+/// <summary>Frames of a recorded match (e.g. a trained network's episode from train/eval.py --record).</summary>
+static void RenderReplay(Args o)
+{
+    string path = o.Req("replay");
+    var rp = Replay.Load(path);
+    var m = Match.Create(SimJson.ReadConfig(rp.Header));
+    double from = o.Num("from", 0), to = o.Num("to", 1e9), every = o.Num("every", 3);
+    int cols = (int)o.Num("cols", 4);
+    double scale = o.Num("scale", Math.Clamp(520 / Math.Max(m.World.Width, m.World.Height), 6, 20));
+    var r = new Renderer(m.World, scale) { FocusTeam = (int)o.Num("focus", 0) };
+    var frames = new List<SKBitmap>();
+    var recent = new List<GameEvent>();
+    string title = Path.GetFileName(path) + "  (team 0: network)";
+    double next = from;
+    foreach (var acts in rp.Ticks.Prepend(null))
+    {
+        if (acts != null)
+        {
+            m.Step(acts);
+            recent.RemoveAll(e => m.Tick - e.Tick > 10);
+            foreach (var e in m.Events) if (e.Type is EventType.Shot or EventType.Hit) recent.Add(e);
+        }
+        if ((m.Time + 1e-9 >= next && next <= to) || (m.Over && acts == rp.Ticks[^1]))
+        {
+            frames.Add(r.Frame(m, null, recent, title));
+            next += every;
+        }
+    }
+    using var sheet = Renderer.Sheet(frames, Math.Min(cols, frames.Count));
+    string outPath = o.Get("out", Path.ChangeExtension(path, ".png"));
+    Renderer.SavePng(sheet, outPath);
+    foreach (var f in frames) f.Dispose();
+    Console.WriteLine($"{frames.Count} frames → {outPath}; result: winner {m.Result.Winner} ({m.Result.Reason}) at {m.Time:0.0}s");
 }
 
 static void ReplayCmd(string sub, Args o)

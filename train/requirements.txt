@@ -1,0 +1,3 @@
+# Python 3.10+. On the GPU machine install the CUDA build of torch that matches its driver.
+torch>=2.1
+numpy>=1.24

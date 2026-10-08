@@ -25,6 +25,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Squad.Sim\Squad.Sim.csproj" />
     <ProjectReference Include="..\Squad.Bots\Squad.Bots.csproj" />
+    <ProjectReference Include="..\Squad.Train\Squad.Train.csproj" />
   </ItemGroup>
 
 </Project>
