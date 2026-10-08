@@ -17,15 +17,26 @@ public partial class Main
     void StartShowcase()
     {
         _title = "showcase " + _show;
-        var map = new MapData { Name = "showcase", Width = 12, Height = 12 };
         _worldRoot?.QueueFree();
         _worldRoot = new Node3D { Name = "World" };
         AddChild(_worldRoot);
-        var groundMat = Mat(new Color("55703a"), 1);
-        // --calib: flat magenta ground, so a script can mask the soldiers when fitting the light to the concept's frames
-        if (OS.GetCmdlineUserArgs().Contains("--calib")) { groundMat.AlbedoColor = new Color(1, 0, 1); groundMat.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded; }
-        var ground = new MeshInstance3D { Mesh = new PlaneMesh { Size = new Vector2(60, 60) }, MaterialOverride = groundMat, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
-        _worldRoot.AddChild(ground);
+        // --calib: flat magenta ground, so a script can mask the soldiers when fitting the light to the concept's frames;
+        // otherwise the map's grass on an empty 16 m field centred on the origin
+        if (OS.GetCmdlineUserArgs().Contains("--calib"))
+        {
+            var groundMat = Mat(new Color(1, 0, 1), 1); groundMat.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
+            _worldRoot.AddChild(new MeshInstance3D { Mesh = new PlaneMesh { Size = new Vector2(60, 60) }, MaterialOverride = groundMat, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off });
+        }
+        else
+        {
+            var field = new Node3D { Position = new Vector3(-8, 0, -8) };
+            _worldRoot.AddChild(field);
+            var map = new MapData { Name = "showcase", Width = 16, Height = 16 };
+            if (_show == "yard") Yard(map.Obstacles);
+            _map = new MapView(new Squad.Sim.World(map), field, 1);
+            _mapOffset = field.Position;
+            _map.ApplyCut(_cut);
+        }
         foreach (var s in _soldiers) s.Free();
         _soldiers = new[]
         {
@@ -61,8 +72,26 @@ public partial class Main
             if (_showT >= KillT - 0.01) _soldiers[1].Killed = (at, dir, HitZone.Torso);
         }
         _fx.Update(dt);
+        UpdateMap(dt);
         if (_shots.Count > 0 && _showT >= _shots[0]) { _shots.RemoveAt(0); _shotPending = 2; }
         _hud.Text = $"{_title}   t = {_showT:0.00} s";
+    }
+
+    /// <summary>yard: a house around the OPFOR soldier (door toward the camera, a window), sandbags, a concrete block,
+    /// crates, a bush and a tree, in map coordinates (the showcase field starts at (−8, −8)).</summary>
+    static void Yard(List<Obstacle> o)
+    {
+        Vec2 P(double x, double z) => new(x + 8, z + 8);
+        void Wall(double x0, double z0, double x1, double z1) => o.Add(Obstacle.Make(ObstacleKind.HighWall, P(x0, z0), P(x1, z1)));
+        // house x −2.6…1.6, z −4.8…−0.8: a door on the z = −0.8 side, a window on the x = 1.6 side
+        Wall(-2.6, -4.8, 1.6, -4.8); Wall(-2.6, -0.8, -2.6, -4.8);
+        Wall(-2.6, -0.8, -1.4, -0.8); Wall(0.1, -0.8, 1.6, -0.8);
+        Wall(1.6, -0.8, 1.6, -2.1); o.Add(Obstacle.Make(ObstacleKind.LowWall, P(1.6, -2.1), P(1.6, -3.5), 0.12)); Wall(1.6, -3.5, 1.6, -4.8);
+        o.Add(Obstacle.Make(ObstacleKind.LowWall, P(2.6, 1.4), P(5.2, 1.4)));
+        o.Add(Obstacle.Make(ObstacleKind.LowWall, P(-3.2, 2.2), P(-3.2, 4.4)));
+        o.Add(Obstacle.Make(ObstacleKind.Crate, P(3.4, -1.6), P(3.4, -1.6))); o.Add(Obstacle.Make(ObstacleKind.Crate, P(3.5, -2.5), P(3.5, -2.5)));
+        o.Add(Obstacle.Make(ObstacleKind.Bush, P(-4.6, 0.2), P(-4.0, 1.4), 0.8));
+        o.Add(Obstacle.Make(ObstacleKind.Tree, P(4.4, -5.0), P(4.4, -5.0), 0.28));
     }
 
     SoldierTruth ShowTruth(int who, double t)

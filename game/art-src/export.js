@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
-import { style, makeRandom } from './textures.js';
+import { style, makeRandom, makeTexture } from './textures.js';
 import { createSoldier, magazineMesh } from './soldier-model.js';
 
 // Builds the concept's soldiers exactly as soldier.html does (painted 256 px textures, creased normals) and hands
@@ -82,6 +82,37 @@ function pool(x) {   // enemy.js poolMesh: a soft irregular disc, 128 px
   }
 }
 
+// World textures for the map: the range's painted 256 px maps (range-world.js colours and seeds) plus two new ones in the
+// same style for house walls, which the range has none of: plaster and brick.
+const WORLD = {
+  grass: ['#6f8a4a', 'leaves', 50], soil: ['#6d5f45', 'plain', 54], sand: ['#a39470', 'burlap', 35],
+  concrete: ['#8f8d82', 'concrete', 41], oak: ['#7a6447', 'planks', 31], timber: ['#4e3d2b', 'planks', 32],
+  crate: ['#535a37', 'ammo', 34], bark: ['#4a3d2e', 'planks', 37], tin: ['#7c817a', 'corrugated', 43],
+  leaf0: ['#56603a', 'leaves', 51], leaf1: ['#4b5634', 'leaves', 52], leaf2: ['#626b42', 'leaves', 53],
+  plaster: ['#cdc3aa', 'concrete', 61], gravel: ['#77705f', 'gravel', 40]
+};
+function bricks() {
+  // running bond, 8 courses per tile, mortar joints and a painted wash like the range's textures
+  const S = 256, c = document.createElement('canvas'); c.width = c.height = S; const x = c.getContext('2d'), R = makeRandom(71);
+  x.fillStyle = '#b8b0a0'; x.fillRect(0, 0, S, S);
+  const rows = 8, h = S/rows, w = S/4;
+  for (let r = 0; r < rows; r++) for (let k = -1; k < 5; k++) {
+    const x0 = k*w + (r % 2 ? w/2 : 0), t = R();
+    const col = t < .3 ? [142, 74, 52] : t < .7 ? [156, 84, 58] : t < .9 ? [128, 66, 48] : [168, 98, 70];
+    const v = .9 + R()*.18;
+    x.fillStyle = `rgb(${col.map(c => Math.round(c*v)).join(',')})`;
+    x.fillRect(x0 + 2, r*h + 2, w - 4, h - 4);
+    x.fillStyle = 'rgba(255,235,210,.07)'; x.fillRect(x0 + 2, r*h + 2, w - 4, 3);
+    x.fillStyle = 'rgba(20,10,5,.12)'; x.fillRect(x0 + 2, r*h + h - 5, w - 4, 3);
+    for (let i = 0; i < 6; i++) { x.fillStyle = R() > .5 ? 'rgba(40,20,10,.18)' : 'rgba(230,200,170,.12)'; x.fillRect(x0 + 3 + R()*(w - 8), r*h + 3 + R()*(h - 8), 1 + R()*3, 1 + R()*2); }
+  }
+  for (let i = 0; i < 16; i++) {
+    const cx = R()*S, cy = R()*S, rr = 30 + R()*70, lite = R() > .5, g = x.createRadialGradient(cx, cy, 0, cx, cy, rr);
+    g.addColorStop(0, lite ? 'rgba(255,244,214,.07)' : 'rgba(18,20,14,.1)'); g.addColorStop(1, 'rgba(0,0,0,0)'); x.fillStyle = g; x.fillRect(0, 0, S, S);
+  }
+  return c.toDataURL('image/png').split(',')[1];
+}
+
 window.__export = async () => {
   const files = {};
   const variants = { soldier_m81: {}, soldier_opfor: { camo: 'khaki', opfor: true } };
@@ -96,6 +127,8 @@ window.__export = async () => {
   files['magazine.glb'] = await glb(magazineMesh(mats));
   for (const [name, draw] of Object.entries(SPRITES)) files[`tex/fx_${name}.png`] = sprite(draw);
   files['tex/fx_pool.png'] = sprite(pool, 128);
+  for (const [name, [col, type, seed]] of Object.entries(WORLD)) files[`tex/w_${name}.png`] = png(makeTexture(col, type, seed));
+  files['tex/w_brick.png'] = bricks();
   return files;
 };
 window.__ready = true;

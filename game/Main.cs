@@ -26,7 +26,7 @@ public partial class Main : Node3D
     double _acc, _speed = 1, _overFor;
     bool _paused, _debug, _labels = true, _cones = true, _auto = true, _cut;
     int[] _shotsSeen = Array.Empty<int>();
-    readonly List<(MeshInstance3D mesh, float h)> _tallWalls = new();  // cut down to waist height with H
+    MapView? _map;
     Fx _fx = null!;
     Ragdoll.Collider[] _walls = Array.Empty<Ragdoll.Collider>();
     readonly Dictionary<int, Queue<double>> _fired = new();   // per shooter: times of shots whose bullet is still flying
@@ -69,7 +69,7 @@ public partial class Main : Node3D
     public override void _ExitTree()
     {
         if (SoldierView.ProbeFeet) GD.Print($"feet: planted-foot travel {SoldierView.SlipSum:0.000} m over {SoldierView.BodySum:0.0} m of body travel ({100 * SoldierView.SlipSum / Math.Max(1e-9, SoldierView.BodySum):0.00}%)");
-        Art.Clear(); Sling.ClearMaterials(); SoldierView.ClearMaterials();
+        Art.Clear(); Sling.ClearMaterials(); SoldierView.ClearMaterials(); MapView.ClearMaterials();
     }
 
     public override void _Ready()
@@ -208,16 +208,18 @@ public partial class Main : Node3D
     {
         if (s is Surface.Ground or Surface.Soldier or Surface.None or Surface.Air) return ("dirt", Vector3.Up);
         var want = s switch { Surface.HighWall => ObstacleKind.HighWall, Surface.LowWall => ObstacleKind.LowWall, Surface.Crate => ObstacleKind.Crate, _ => ObstacleKind.Tree };
-        Obstacle best = default; double bd = double.MaxValue; Vec2 bq = p;
-        foreach (var o in _m!.World.Obstacles)
+        Obstacle best = default; double bd = double.MaxValue; Vec2 bq = p; int bi = -1;
+        var obs = _m!.World.Obstacles;
+        for (int i = 0; i < obs.Length; i++)
         {
+            var o = obs[i];
             if (o.Kind != want) continue;
             var ab = o.B - o.A; double L2 = ab.LengthSq;
             double t = L2 > 0 ? Math.Clamp((p - o.A).Dot(ab) / L2, 0, 1) : 0;
             var c = o.A + ab * t; double d = Vec2.Distance(p, c) - o.R;
-            if (Math.Abs(d) < bd) { bd = Math.Abs(d); best = o; bq = c; }
+            if (Math.Abs(d) < bd) { bd = Math.Abs(d); best = o; bq = c; bi = i; }
         }
-        string kind = want switch { ObstacleKind.HighWall => "concrete", ObstacleKind.LowWall => "sand", _ => "wood" };
+        string kind = bi >= 0 && _map?.Kinds[bi] is { } k ? k : "concrete";
         if (h >= best.H - 0.03) return (kind, Vector3.Up);
         var n = new Vector3((float)(p.X - bq.X), 0, (float)(p.Y - bq.Y));
         return (kind, n.LengthSquared() > 1e-8f ? n.Normalized() : new Vector3(-dir.X, 0, -dir.Z).Normalized());
@@ -259,6 +261,7 @@ public partial class Main : Node3D
             float simDt = _paused || _m.Over ? 0 : (float)(delta * _speed);
             for (int i = 0; i < _soldiers.Length; i++) _soldiers[i].Update(_prev[i], _cur[i], alpha, simDt, _cam, _debug && _labels);
             _fx.Update(simDt);
+            UpdateMap(simDt);
             DrawCones(alpha);
         }
         UpdateHud();
@@ -464,105 +467,36 @@ public partial class Main : Node3D
         _worldRoot?.QueueFree();
         _worldRoot = new Node3D { Name = "World" };
         AddChild(_worldRoot);
-        float ww = (float)w.Width, wh = (float)w.Height;
-
-        _tallWalls.Clear();
         _walls = w.Obstacles.Where(o => o.Solid).Select(o => new Ragdoll.Collider
         {
             Ax = (float)o.A.X, Az = (float)o.A.Y, Bx = (float)o.B.X, Bz = (float)o.B.Y, R = (float)o.R, H = (float)o.H,
         }).ToArray();
-        MeshInstance3D Add(Mesh mesh, Material mat, Vector3 pos, float yaw = 0, bool shadow = true)
-        {
-            var mi = new MeshInstance3D
-            {
-                Mesh = mesh, MaterialOverride = mat, Position = pos, Rotation = new Vector3(0, yaw, 0),
-                CastShadow = shadow ? GeometryInstance3D.ShadowCastingSetting.On : GeometryInstance3D.ShadowCastingSetting.Off,
-            };
-            _worldRoot!.AddChild(mi);
-            return mi;
-        }
-
-        // ground: the playable field and a darker apron around it
-        Add(new PlaneMesh { Size = new Vector2(ww + 40, wh + 40) }, Mat(new Color("20251d")), new Vector3(ww / 2, -0.02f, wh / 2), 0, false);
-        Add(new PlaneMesh { Size = new Vector2(ww, wh) }, Mat(new Color("3a4232")), new Vector3(ww / 2, 0, wh / 2), 0, false);
-
-        // 5 m grid
-        var grid = new ImmediateMesh();
-        grid.SurfaceBegin(Mesh.PrimitiveType.Lines);
-        grid.SurfaceSetColor(new Color(1, 1, 1, 0.06f));
-        for (int x = 5; x < ww; x += 5) { grid.SurfaceAddVertex(new Vector3(x, 0.01f, 0)); grid.SurfaceAddVertex(new Vector3(x, 0.01f, wh)); }
-        for (int y = 5; y < wh; y += 5) { grid.SurfaceAddVertex(new Vector3(0, 0.01f, y)); grid.SurfaceAddVertex(new Vector3(ww, 0.01f, y)); }
-        grid.SurfaceEnd();
-        Add(grid, _coneMat, Vector3.Zero, 0, false);
-
-        for (int t = 0; t < w.Map.Spawns.Count && t < 2; t++)
-        {
-            var z = w.Map.Spawns[t];
-            var size = new Vector2((float)(z.Max.X - z.Min.X), (float)(z.Max.Y - z.Min.Y));
-            var c = TeamCol[t]; c.A = 0.16f;
-            var mat = Mat(c); mat.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
-            Add(new PlaneMesh { Size = size }, mat, W(z.Center, 0.015), 0, false);
-        }
+        _map = new MapView(w, _worldRoot, _seed);
+        // objective zones of the rules: a faint painted ring
         foreach (var z in w.Map.Zones)
         {
-            var mat = Mat(new Color(0.95f, 0.8f, 0.25f, 0.3f)); mat.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
-            Add(new CylinderMesh { TopRadius = (float)z.Radius, BottomRadius = (float)z.Radius, Height = 0.03f, RadialSegments = 48 }, mat, W(z.Center, 0.02), 0, false);
-        }
-
-        var highWall = Mat(new Color("d8d2c0"));
-        var lowWall = Mat(new Color("b09358"));
-        var crate = Mat(new Color("8f5e2e"));
-        var bush = Mat(new Color(0.31f, 0.6f, 0.24f, 0.78f));
-        var trunk = Mat(new Color("5a3d22"));
-        var leaves = Mat(new Color(0.17f, 0.4f, 0.15f, 0.82f));
-
-        foreach (var o in w.Obstacles)
-        {
-            var d = o.B - o.A;
-            double len = d.Length;
-            float h = (float)o.H, r = (float)o.R;
-            var mid = (o.A + o.B) * 0.5;
-            float yaw = len > 1e-6 ? (float)Math.Atan2(d.X, d.Y) : 0;
-            switch (o.Kind)
+            var mat = Mat(new Color(0.95f, 0.8f, 0.25f, 0.22f)); mat.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
+            _worldRoot.AddChild(new MeshInstance3D
             {
-                case ObstacleKind.HighWall:
-                    _tallWalls.Add((Add(new BoxMesh { Size = new Vector3(2 * r, h, (float)len + 2 * r) }, highWall, W(mid, h / 2), yaw), h));
-                    break;
-                case ObstacleKind.LowWall:
-                    Add(new BoxMesh { Size = new Vector3(2 * r, h, (float)len + 2 * r) }, lowWall, W(mid, h / 2), yaw);
-                    break;
-                case ObstacleKind.Crate:
-                    Add(new BoxMesh { Size = new Vector3(2 * r, h, (float)len + 2 * r) }, crate, W(mid, h / 2), yaw);
-                    break;
-                case ObstacleKind.Bush:
-                {
-                    // a capsule of foliage: blobs along the segment
-                    int n = Math.Max(1, (int)Math.Ceiling(len / r) + 1);
-                    for (int k = 0; k < n; k++)
-                    {
-                        var p = n == 1 ? mid : o.A + d * ((double)k / (n - 1));
-                        Add(new SphereMesh { Radius = r, Height = h * 1.1f, RadialSegments = 12, Rings = 6 }, bush, W(p, h * 0.5f));
-                    }
-                    break;
-                }
-                case ObstacleKind.Tree:
-                    Add(new CylinderMesh { TopRadius = r * 0.7f, BottomRadius = r, Height = h * 0.7f, RadialSegments = 8 }, trunk, W(mid, h * 0.35f));
-                    Add(new SphereMesh { Radius = 1.2f, Height = 1.9f, RadialSegments = 12, Rings = 6 }, leaves, W(mid, h * 0.82f));
-                    break;
-            }
+                Mesh = new CylinderMesh { TopRadius = (float)z.Radius, BottomRadius = (float)z.Radius, Height = 0.02f, RadialSegments = 48 },
+                MaterialOverride = mat, Position = W(z.Center, 0.012), CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
+            });
         }
     }
 
-    void ApplyCut()
+    float _time;
+    Vector3 _mapOffset;
+    readonly List<Vector3> _alive = new();
+    void UpdateMap(float dt)
     {
-        // cosmetic only: the simulation still treats them as 2.5 m walls
-        foreach (var (mesh, h) in _tallWalls)
-        {
-            float k = _cut ? 0.9f / h : 1;
-            mesh.Scale = new Vector3(1, k, 1);
-            mesh.Position = new Vector3(mesh.Position.X, h * k / 2, mesh.Position.Z);
-        }
+        if (_map == null) return;
+        _time += dt;
+        _alive.Clear();
+        foreach (var s in _soldiers) if (!s.Dead) _alive.Add(s.Root.Position - _mapOffset);
+        _map.Update(_time, dt, _camYaw, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(_alive), _cut);
     }
+
+    void ApplyCut() => _map?.ApplyCut(_cut);   // cosmetic only: the simulation still treats them as 2.5 m walls
 
     void BuildSoldiers(Match m)
     {
