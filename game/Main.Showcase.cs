@@ -4,7 +4,7 @@ using Squad.Sim;
 /// <summary>--showcase NAME: no match, two soldiers driven by scripted truth through the same view and rig code, placed
 /// like the concept's shots.cjs plans (the player at the origin facing 200°, the OPFOR soldier at (−0.6, −2.4) facing
 /// him), so close-ups can be put side by side with the concept's frames. Scenes: stand, aim, crouch, walk, run, sneak,
-/// reload, tactical, fire, turn. Soldier 0 is M81, soldier 1 is OPFOR.</summary>
+/// reload, tactical, fire, kill, turn. Soldier 0 is M81, soldier 1 is OPFOR.</summary>
 public partial class Main
 {
     string? _show;
@@ -12,6 +12,7 @@ public partial class Main
     SoldierTruth[] _showPrev = new SoldierTruth[2], _showCur = new SoldierTruth[2];
 
     static readonly Vec2 EnemyAt = new(-0.6, -2.4);
+    double KillT => _show == "kill" ? 1.1 : 1e9;
 
     void StartShowcase()
     {
@@ -28,8 +29,8 @@ public partial class Main
         foreach (var s in _soldiers) s.Free();
         _soldiers = new[]
         {
-            new SoldierView(0, 0, null, 100, _worldRoot, _overlay),
-            new SoldierView(1, 1, null, 100, _worldRoot, _overlay),
+            new SoldierView(0, 0, null, 100, _worldRoot, _overlay, _fx, _walls),
+            new SoldierView(1, 1, null, 100, _worldRoot, _overlay, _fx, _walls),
         };
         _showT = 0;
         for (int i = 0; i < 2; i++) _showPrev[i] = _showCur[i] = ShowTruth(i, 0);
@@ -43,12 +44,23 @@ public partial class Main
         _showT += delta * _speed;
         for (int i = 0; i < 2; i++) { _showPrev[i] = _showCur[i]; _showCur[i] = ShowTruth(i, _showT); }
         float dt = (float)(delta * _speed);
-        // shots in the scripted fire scene: one every 0.25 s once the rifle is up
-        if (_show == "fire" && Math.Floor((_showT - 0.6) / 0.25) > Math.Floor((_showT - dt - 0.6) / 0.25) && _showT > 0.6) _soldiers[0].Shot = true;
+        // shots in the scripted fire and kill scenes: one every 0.25 s once the rifle is up; the third one kills in "kill"
+        bool shot = _show is "fire" or "kill" && _showT > 0.6 && _showT - dt <= KillT && Math.Floor((_showT - 0.6) / 0.25) > Math.Floor((_showT - dt - 0.6) / 0.25);
+        if (shot) _soldiers[0].Shot = true;
         if (_show is "reload" or "tactical") _soldiers[0].ReloadEmpty = _show == "reload";
         if (_follow >= 0) _target = new Vector3((float)_showCur[_follow].Pos.X, 0.9f, (float)_showCur[_follow].Pos.Y);
         UpdateCamera(1);
         for (int i = 0; i < 2; i++) _soldiers[i].Update(_showPrev[i], _showCur[i], 1, dt, _cam, false);
+        if (shot)
+        {
+            // the bullet goes into the enemy's chest, as a Shot + Hit (+ Kill) from the simulation would say
+            var at = new Vector3((float)EnemyAt.X, 1.25f, (float)EnemyAt.Y) + new Vector3(0.05f, 0, 0) * (float)Math.Sin(_showT * 7);
+            var from = _soldiers[0].MuzzleW; var dir = (at - from).Normalized();
+            _fx.Tracer(from, at, 0, () => _fx.Blood(at, dir, 1));
+            _soldiers[1].Flinch = (dir, at, HitZone.Torso);
+            if (_showT >= KillT - 0.01) _soldiers[1].Killed = (at, dir, HitZone.Torso);
+        }
+        _fx.Update(dt);
         if (_shots.Count > 0 && _showT >= _shots[0]) { _shots.RemoveAt(0); _shotPending = 2; }
         _hud.Text = $"{_title}   t = {_showT:0.00} s";
     }
@@ -60,6 +72,7 @@ public partial class Main
         if (who == 1)
         {
             s.Pos = EnemyAt; s.Yaw = s.AimYaw = (Vec2.Zero - EnemyAt).Yaw;
+            s.Alive = !(_show == "kill" && t >= KillT);
             return s;
         }
         s.Yaw = s.AimYaw = 200 * deg;
@@ -93,7 +106,7 @@ public partial class Main
                 if (t >= 0.5 && t < 0.5 + dur) { s.Reloading = true; s.ReloadT = t - 0.5; s.Mag = s.ReloadT < 0.17 ? 30 : 0; }
                 break;
             }
-            case "fire": AimAtEnemy(0.2); break;
+            case "fire": case "kill": AimAtEnemy(0.2); break;
             case "turn":
             {
                 // aim sweeps left and right of the enemy: the rifle leads, the legs follow

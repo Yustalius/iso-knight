@@ -8,7 +8,6 @@ using Squad.Sim;
 public partial class Main : Node3D
 {
     const double Dt = 1.0 / 30;
-    const float TracerLife = 0.12f, HitLife = 0.35f;
 
     internal static readonly Color[] TeamCol = { new("4fa8ff"), new("ff6a55") };
 
@@ -28,15 +27,17 @@ public partial class Main : Node3D
     bool _paused, _debug, _labels = true, _cones = true, _auto = true, _cut;
     int[] _shotsSeen = Array.Empty<int>();
     readonly List<(MeshInstance3D mesh, float h)> _tallWalls = new();  // cut down to waist height with H
-    readonly List<(Vector3 a, Vector3 b, double t)> _tracers = new();
-    readonly List<(Vector3 p, double t)> _hits = new();
+    Fx _fx = null!;
+    Ragdoll.Collider[] _walls = Array.Empty<Ragdoll.Collider>();
+    readonly Dictionary<int, Queue<double>> _fired = new();   // per shooter: times of shots whose bullet is still flying
+    readonly Dictionary<int, (Vector3 point, Vector3 dir, HitZone zone)> _lastHit = new();
 
     // scene
     Node3D? _worldRoot;
     SoldierView[] _soldiers = Array.Empty<SoldierView>();
-    MeshInstance3D _fx = null!, _coneMesh = null!;
-    ImmediateMesh _fxMesh = null!, _coneIm = null!;
-    StandardMaterial3D _fxMat = null!, _coneMat = null!;
+    MeshInstance3D _coneMesh = null!;
+    ImmediateMesh _coneIm = null!;
+    StandardMaterial3D _coneMat = null!;
     Camera3D _cam = null!;
     Godot.Environment _env = null!;
     DirectionalLight3D _sun = null!;
@@ -68,7 +69,7 @@ public partial class Main : Node3D
     public override void _ExitTree()
     {
         if (SoldierView.ProbeFeet) GD.Print($"feet: planted-foot travel {SoldierView.SlipSum:0.000} m over {SoldierView.BodySum:0.0} m of body travel ({100 * SoldierView.SlipSum / Math.Max(1e-9, SoldierView.BodySum):0.00}%)");
-        Art.Clear(); Sling.ClearMaterials();
+        Art.Clear(); Sling.ClearMaterials(); SoldierView.ClearMaterials();
     }
 
     public override void _Ready()
@@ -114,7 +115,7 @@ public partial class Main : Node3D
     void StartMatch()
     {
         _error = "";
-        _tracers.Clear(); _hits.Clear();
+        _fx.Clear(); _fired.Clear(); _lastHit.Clear();
         _acc = 0; _overFor = 0;
         if (_scenarios.Length == 0) { _error = "no scenarios in " + _simDir; return; }
         try
@@ -153,27 +154,73 @@ public partial class Main : Node3D
         for (int i = 0; i < m.Count; i++)
         {
             int n = m.Stats(i).Shots;
-            if (n > _shotsSeen[i]) _soldiers[i].Shot = true;
+            if (n > _shotsSeen[i])
+            {
+                _soldiers[i].Shot = true;
+                if (!_fired.TryGetValue(i, out var q)) _fired[i] = q = new Queue<double>();
+                q.Enqueue(m.Time);
+            }
             _shotsSeen[i] = n;
         }
         foreach (var e in m.Events)
         {
             switch (e.Type)
             {
-                case EventType.Shot:
-                    _tracers.Add((W(e.Pos, e.H), W(e.Pos2, e.H2), m.Time));
-                    break;
+                case EventType.Shot: OnShot(e, m.Time); break;
                 case EventType.Hit:
-                    _hits.Add((W(e.Pos, e.H > 0 ? e.H : 1.2), m.Time));
-                    _soldiers[e.Other].Flinch = (new Vector3((float)e.Pos2.X, 0, (float)e.Pos2.Y), W(e.Pos, e.H), 1f);
+                {
+                    var dir = new Vector3((float)e.Pos2.X, 0, (float)e.Pos2.Y);
+                    var at = W(e.Pos, e.H);
+                    _soldiers[e.Other].Flinch = (dir, at, e.Zone);
+                    _lastHit[e.Other] = (at, dir, e.Zone);
+                    break;
+                }
+                case EventType.Kill:
+                    if (_lastHit.TryGetValue(e.Other, out var h)) _soldiers[e.Other].Killed = h;
                     break;
                 case EventType.ReloadStart:
                     _soldiers[e.Agent].ReloadEmpty = e.Value > 0;
                     break;
             }
         }
-        _tracers.RemoveAll(t => m.Time - t.t > TracerLife);
-        _hits.RemoveAll(h => m.Time - h.t > HitLife);
+    }
+
+    /// <summary>A bullet stopped: a tracer from the drawn muzzle to that point, and what it hit reacts when it arrives.</summary>
+    void OnShot(in GameEvent e, double now)
+    {
+        double fired = _fired.TryGetValue(e.Agent, out var q) && q.Count > 0 ? q.Dequeue() : now;
+        var shooter = _soldiers[e.Agent];
+        var from = shooter.Dead || shooter.MuzzleW == Vector3.Zero ? W(e.Pos, e.H) : shooter.MuzzleW;
+        var end = W(e.Pos2, e.H2);
+        var dir = (end - from).Normalized();
+        var surf = e.Surface;
+        if (surf == Surface.Air) { _fx.Tracer(from, end, (float)(now - fired), null); return; }
+        var (kind, normal) = ImpactAt(e.Pos2, e.H2, surf, dir);
+        _fx.Tracer(from, end, (float)(now - fired), () =>
+        {
+            if (surf == Surface.Soldier) _fx.Blood(end, dir, 1);
+            else _fx.Impact(kind, end, normal, dir);
+        });
+    }
+
+    /// <summary>What a bullet hit and the surface normal there: the nearest obstacle of that kind (they are capsules).</summary>
+    (string kind, Vector3 normal) ImpactAt(Vec2 p, double h, Surface s, Vector3 dir)
+    {
+        if (s is Surface.Ground or Surface.Soldier or Surface.None or Surface.Air) return ("dirt", Vector3.Up);
+        var want = s switch { Surface.HighWall => ObstacleKind.HighWall, Surface.LowWall => ObstacleKind.LowWall, Surface.Crate => ObstacleKind.Crate, _ => ObstacleKind.Tree };
+        Obstacle best = default; double bd = double.MaxValue; Vec2 bq = p;
+        foreach (var o in _m!.World.Obstacles)
+        {
+            if (o.Kind != want) continue;
+            var ab = o.B - o.A; double L2 = ab.LengthSq;
+            double t = L2 > 0 ? Math.Clamp((p - o.A).Dot(ab) / L2, 0, 1) : 0;
+            var c = o.A + ab * t; double d = Vec2.Distance(p, c) - o.R;
+            if (Math.Abs(d) < bd) { bd = Math.Abs(d); best = o; bq = c; }
+        }
+        string kind = want switch { ObstacleKind.HighWall => "concrete", ObstacleKind.LowWall => "sand", _ => "wood" };
+        if (h >= best.H - 0.03) return (kind, Vector3.Up);
+        var n = new Vector3((float)(p.X - bq.X), 0, (float)(p.Y - bq.Y));
+        return (kind, n.LengthSquared() > 1e-8f ? n.Normalized() : new Vector3(-dir.X, 0, -dir.Z).Normalized());
     }
 
     public override void _Process(double delta)
@@ -211,7 +258,7 @@ public partial class Main : Node3D
         {
             float simDt = _paused || _m.Over ? 0 : (float)(delta * _speed);
             for (int i = 0; i < _soldiers.Length; i++) _soldiers[i].Update(_prev[i], _cur[i], alpha, simDt, _cam, _debug && _labels);
-            DrawFx();
+            _fx.Update(simDt);
             DrawCones(alpha);
         }
         UpdateHud();
@@ -365,17 +412,7 @@ public partial class Main : Node3D
         _cam = new Camera3D { Projection = Camera3D.ProjectionType.Orthogonal, Near = 1, Far = 500, Current = true };
         AddChild(_cam);
 
-        _fxMesh = new ImmediateMesh();
-        _fxMat = new StandardMaterial3D
-        {
-            ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
-            VertexColorUseAsAlbedo = true,
-            Transparency = BaseMaterial3D.TransparencyEnum.Alpha,
-            CullMode = BaseMaterial3D.CullModeEnum.Disabled,
-        };
-        _fx = new MeshInstance3D { Mesh = _fxMesh, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
-        AddChild(_fx);
-
+        _fx = new Fx(this);
         _coneIm = new ImmediateMesh();
         _coneMat = new StandardMaterial3D
         {
@@ -430,6 +467,10 @@ public partial class Main : Node3D
         float ww = (float)w.Width, wh = (float)w.Height;
 
         _tallWalls.Clear();
+        _walls = w.Obstacles.Where(o => o.Solid).Select(o => new Ragdoll.Collider
+        {
+            Ax = (float)o.A.X, Az = (float)o.A.Y, Bx = (float)o.B.X, Bz = (float)o.B.Y, R = (float)o.R, H = (float)o.H,
+        }).ToArray();
         MeshInstance3D Add(Mesh mesh, Material mat, Vector3 pos, float yaw = 0, bool shadow = true)
         {
             var mi = new MeshInstance3D
@@ -530,46 +571,11 @@ public partial class Main : Node3D
         for (int i = 0; i < m.Count; i++)
         {
             var t = m.Truth(i);
-            _soldiers[i] = new SoldierView(i, t.Team, _runner!.Brains[i], m.B.Damage.Hp, _worldRoot!, _overlay);
+            _soldiers[i] = new SoldierView(i, t.Team, _runner!.Brains[i], m.B.Damage.Hp, _worldRoot!, _overlay, _fx, _walls);
         }
     }
 
     // ───────────────────────── per-frame effects ─────────────────────────
-
-    void DrawFx()
-    {
-        var m = _m!;
-        _fxMesh.ClearSurfaces();
-        if (_tracers.Count == 0 && _hits.Count == 0) return;
-        var camDir = -_cam.GlobalBasis.Z;
-        _fxMesh.SurfaceBegin(Mesh.PrimitiveType.Triangles, _fxMat);
-        foreach (var (a, b, t) in _tracers)
-        {
-            float k = 1 - (float)((m.Time - t) / TracerLife);
-            var side = (b - a).Cross(camDir).Normalized() * Math.Max(0.02f, _zoom * 0.0016f);
-            Quad(a - side, a + side, b + side, b - side, new Color(1, 0.95f, 0.6f, 0.95f * k), new Color(1, 0.9f, 0.5f, 0.15f * k));
-        }
-        float hs = Math.Max(0.12f, _zoom * 0.005f);
-        var up = _cam.GlobalBasis.Y * hs; var right = _cam.GlobalBasis.X * hs;
-        foreach (var (p, t) in _hits)
-        {
-            float k = 1 - (float)((m.Time - t) / HitLife);
-            var c = new Color(1, 0.2f, 0.15f, k);
-            float s = 1 + (1 - k) * 1.5f;
-            Quad(p - right * s, p + up * s, p + right * s, p - up * s, c, c);
-        }
-        _fxMesh.SurfaceEnd();
-    }
-
-    void Quad(Vector3 a, Vector3 b, Vector3 c, Vector3 d, Color ca, Color cc)
-    {
-        _fxMesh.SurfaceSetColor(ca); _fxMesh.SurfaceAddVertex(a);
-        _fxMesh.SurfaceSetColor(ca); _fxMesh.SurfaceAddVertex(b);
-        _fxMesh.SurfaceSetColor(cc); _fxMesh.SurfaceAddVertex(c);
-        _fxMesh.SurfaceSetColor(ca); _fxMesh.SurfaceAddVertex(a);
-        _fxMesh.SurfaceSetColor(cc); _fxMesh.SurfaceAddVertex(c);
-        _fxMesh.SurfaceSetColor(cc); _fxMesh.SurfaceAddVertex(d);
-    }
 
     void DrawCones(float alpha)
     {
