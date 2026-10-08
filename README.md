@@ -12,7 +12,21 @@ cd sim
 dotnet test Squad.Tests
 dotnet run --project Squad.Tools -c Release -- arena --scenario scenarios/asym-7v5.json --matches 200 --swap
 dotnet run --project Squad.Tools -c Release -- render --scenario scenarios/flank-forward-defenders.json --seed 3 --to 40 --every 5
+dotnet run --project Squad.Tools -c Release -- render --scenario scenarios/asym-7v5.json --seed 4 --to 300 --every 0.0333334 --frames out/f   # кадр на тик, для ffmpeg
 ```
+
+## 3D-просмотр матчей (`game/`, Godot 4.7 .NET)
+
+Godot-проект подключает `sim/` напрямую и рисует матч ботов в изометрии: `Truth` и `Events`, интерполяция между тиками.
+Пока это просмотрщик, а не игра: бойцы — капсулы, препятствия — коробки по их размерам из симуляции.
+
+```powershell
+powershell -File game\run.ps1 --scenario big-10v10 --seed 4      # путь к Godot по умолчанию в скрипте, иначе -Godot <exe>
+```
+
+Пробел — пауза, `.` — тик, `+`/`-` — скорость, `R`/`N` — заново / следующий сид, `[`/`]` — сценарий, `F` — следить за бойцом,
+`H` — срезать высокие стены, `C` — конусы обзора, `L` — подписи, WASD/ПКМ — камера, Q/E — поворот, колесо — масштаб.
+`--shots 5,20` сохраняет кадры в `sim/out/godot/` и закрывает окно — так проверять изменения без человека.
 
 ## Прототип рыцаря (three.js, референс)
 
