@@ -14,6 +14,7 @@ sealed class SoldierView
     public readonly Node3D Model;
     readonly Skeleton3D _sk;
     public readonly SoldierRig Rig;
+    readonly Sling _sling;
     readonly Label _label;
     readonly ColorRect _hpBg, _hpFill;
     readonly IBrain? _brain;
@@ -41,6 +42,7 @@ sealed class SoldierView
         Root.AddChild(Model);
         _sk = Art.FindSkeleton(Model)!;
         Rig = new SoldierRig(new Pose(_sk), 7919 * (id + 1));
+        _sling = new Sling(parent, team);
 
         _label = Main.MakeLabel(12);
         _label.AddThemeColorOverride("font_color", Main.TeamCol[team].Lightened(0.45f));
@@ -114,6 +116,8 @@ sealed class SoldierView
         Shot = false;
         Rig.Update(dt, inp);
         Rig.Pose.Apply(_sk);
+        _sling.Step(dt, ToWorld(Rig.Out.SwivelF), ToWorld(Rig.Out.SwivelR), -cam.GlobalBasis.Z);
+        if (ProbeFeet) MeasureFeet();
 
         var headP = Root.Position + new Vector3(0, 2.0f - 0.7f * crouch, 0);
         bool show = labels && !cam.IsPositionBehind(headP);
@@ -128,6 +132,30 @@ sealed class SoldierView
         _hpFill.Position = _hpBg.Position;
         _hpFill.Size = new Vector2(34 * frac, 4);
         _hpFill.Color = frac > 0.5f ? new Color("7cd65a") : frac > 0.25f ? new Color("e8c547") : new Color("e04a3a");
+    }
+
+    // --probe-feet: how far a planted foot travels in mid-stance compared with the body (it should stay put)
+    public static bool ProbeFeet;
+    public static double SlipSum, BodySum;
+    readonly Vector3?[] _ankle = new Vector3?[2];
+    Vector3? _rootPrev;
+    void MeasureFeet()
+    {
+        var g = Rig.Gait;
+        var root = Root.Position;
+        for (int k = 0; k < 2; k++)
+        {
+            var f = g.Feet[k];
+            var p = ToWorld(Rig.Pose.WorldPos(Rig.FootBone(k)));
+            bool mid = f.Stance && g.MoveW > 0.8f && f.Bell > 0.6f;   // heel and toe roll excluded
+            if (mid && _ankle[k] is { } a && _rootPrev is { } r)
+            {
+                SlipSum += new Vector2(p.X - a.X, p.Z - a.Z).Length();
+                BodySum += new Vector2(root.X - r.X, root.Z - r.Z).Length() / 2;
+            }
+            _ankle[k] = mid ? p : null;
+        }
+        _rootPrev = root;
     }
 
     /// <summary>World transform of a point given in the soldier's model space.</summary>

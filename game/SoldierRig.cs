@@ -113,8 +113,12 @@ public sealed class SoldierRig
     static readonly float[][] IdleFeet = { new[] { 0.125f, 0.05f, 0.16f }, new[] { -0.13f, -0.04f, -0.12f } };
     static readonly float[][] AimFeet = { new[] { 0.12f, 0.15f, -0.12f }, new[] { -0.15f, -0.12f, -0.62f } };
     readonly float[][] _feet = { new float[3], new float[3] };
+    readonly bool[] _locked = new bool[2];
+    readonly Vector3[] _lockW = new Vector3[2];
 
     public Pose Pose => _p;
+    public Gait Gait => _gait;
+    public int FootBone(int k) => foot[k];
 
     public SoldierRig(Pose pose, int seed)
     {
@@ -210,6 +214,8 @@ public sealed class SoldierRig
 
         // ---------- legs ----------
         int steps = 0;
+        var rootM = new Transform3D(new Basis(Vector3.Up, input.RootYaw), input.RootPos);
+        var rootInv = rootM.AffineInverse();
         for (int k = 0; k < 2; k++)
         {
             bool left = k == 0;
@@ -218,6 +224,19 @@ public sealed class SoldierRig
             float lift = g.Lift * mw, pitch = g.Pitch * mw;
             x += (left ? 0.035f : -0.035f) * cr * (1 - mw);
             if (!left && cr > 0.01f) z -= 0.06f * cr * (1 - mw);
+            // foot lock: a planted foot keeps its world spot while the body turns or changes speed under it (the gait
+            // alone only matches straight, steady walking); it lets go over the toe-off
+            if (g.Stance && mw > 0.5f)
+            {
+                var w = rootM * new Vector3(x, 0, z);
+                if (!_locked[k]) { _lockW[k] = w; _locked[k] = true; }
+                var l = rootInv * _lockW[k];
+                var d = new Vector2(l.X - x, l.Z - z);
+                if (d.Length() > 0.2f) d = d.Normalized() * 0.2f;
+                float hold = 1 - Smooth((g.A - 0.75f) / 0.25f);
+                x += d.X * hold; z += d.Y * hold;
+            }
+            else _locked[k] = false;
             // ankle placement that pivots the sole about the heel (pitch < 0) or the toe (pitch > 0)
             var fq = EulerYXZ(pitch, _gait.FootYaw[k], 0);
             float pivot = pitch < 0 ? Sole.Heel : Sole.Toe;

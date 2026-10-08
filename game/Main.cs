@@ -63,8 +63,13 @@ public partial class Main : Node3D
     string _shotDir = "";
     int _shotPending = -1;
     bool _shotsMode;
+    float? _camYawArg;
 
-    public override void _ExitTree() => Art.Clear();
+    public override void _ExitTree()
+    {
+        if (SoldierView.ProbeFeet) GD.Print($"feet: planted-foot travel {SoldierView.SlipSum:0.000} m over {SoldierView.BodySum:0.0} m of body travel ({100 * SoldierView.SlipSum / Math.Max(1e-9, SoldierView.BodySum):0.00}%)");
+        Art.Clear(); Sling.ClearMaterials();
+    }
 
     public override void _Ready()
     {
@@ -85,6 +90,8 @@ public partial class Main : Node3D
                 case "--follow": _follow = int.Parse(next); i++; break;
                 case "--cut": _cut = true; break;
                 case "--showcase": _show = next; i++; break;
+                case "--cam-yaw": _camYawArg = Mathf.DegToRad(float.Parse(next, System.Globalization.CultureInfo.InvariantCulture)); i++; break;
+                case "--probe-feet": SoldierView.ProbeFeet = true; break;
                 case "--light": _lightArg = next.Split(',').Select(x => float.Parse(x, System.Globalization.CultureInfo.InvariantCulture)).ToArray(); i++; break;
                 case "--shots":
                     _shotsMode = true;

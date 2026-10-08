@@ -35,7 +35,7 @@ public partial class Main
         for (int i = 0; i < 2; i++) _showPrev[i] = _showCur[i] = ShowTruth(i, 0);
         _target = new Vector3(0, 0.9f, 0);
         _zoom = _zoomArg ?? 3.2f;
-        _camYaw = Mathf.Pi / 4;
+        _camYaw = _camYawArg ?? Mathf.Pi / 4;
     }
 
     void ProcessShowcase(double delta)
@@ -83,9 +83,9 @@ public partial class Main
         {
             case "aim": AimAtEnemy(0.2); break;
             case "crouch": s.Crouch = Ramp(0.1, 0.3); AimAtEnemy(0.4); break;
-            case "walk": Walk(1.45, 90 * deg); break;
-            case "run": Walk(3.0, 90 * deg); break;
-            case "sneak": s.Crouch = 1; Walk(0.85, 90 * deg); break;
+            case "walk": Walk(1.45, 135 * deg); break;
+            case "run": Walk(3.0, 135 * deg); break;
+            case "sneak": s.Crouch = 1; Walk(0.85, 135 * deg); break;
             case "reload":
             case "tactical":
             {

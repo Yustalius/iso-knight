@@ -147,7 +147,7 @@ public sealed class Gait
     public readonly float[] FootYaw = { 0.14f, -0.1f };   // [L, R]
     readonly bool[] _wasStance = { true, true };
 
-    public struct Foot { public bool Strike, Stance; public float X, Z, Lift, Pitch, O, P, Bell; }
+    public struct Foot { public bool Strike, Stance; public float X, Z, Lift, Pitch, O, P, A, Bell; }
     public readonly Foot[] Feet = new Foot[2];             // [L, R]
     public float V;
     public Vector3 U;
@@ -162,9 +162,13 @@ public sealed class Gait
         MoveW = RigMath.Damp(MoveW, RigMath.Clamp(drive / 0.3f, 0, 1), 9, dt);
         RunW = RigMath.Damp(RunW, RigMath.Smooth((v - 1.6f) / 1.1f), 6, dt);
         float cadence = RigMath.Lerp(0.78f + 0.52f * RigMath.Clamp(drive / 1.4f, 0, 1), 1.48f, RunW) * (1 - 0.22f * crouch);
-        Phase += cadence * dt;
         float duty = RigMath.Lerp(0.6f, 0.37f, RunW) + 0.08f * crouch;
-        float travel = MathF.Min(0.78f - 0.2f * crouch, v / cadence * duty);
+        // a stride longer than the legs allow would skate the planted foot (the concept's crouch walk did):
+        // step faster instead, so the stance foot always moves back at exactly the body's speed
+        float maxTravel = 0.78f - 0.2f * crouch;
+        if (v / cadence * duty > maxTravel) cadence = v * duty / maxTravel;
+        Phase += cadence * dt;
+        float travel = v / cadence * duty;
         var u = v > 1e-3f ? new Vector3(vl.X / v, 0, vl.Z / v) : new Vector3(0, 0, 1);
         float fwd = u.Z;
         float lift = RigMath.Lerp(0.1f, 0.17f, RunW) * RigMath.Clamp(drive / 0.55f, 0.35f, 1) * (1 - 0.3f * crouch);
@@ -196,7 +200,7 @@ public sealed class Gait
             Feet[k] = new Foot
             {
                 Strike = strike, X = bx + u.X * o, Z = u.Z * o, Lift = h, Pitch = pitch * fwd * RigMath.Clamp(v / 0.6f, 0, 1),
-                O = o, P = p, Stance = stance, Bell = stance ? MathF.Sin(MathF.PI * p / duty) : 0
+                O = o, P = p, A = stance ? p / duty : 0, Stance = stance, Bell = stance ? MathF.Sin(MathF.PI * p / duty) : 0
             };
         }
         V = v; U = u;
