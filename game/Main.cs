@@ -20,7 +20,9 @@ public partial class Main : Node3D
 
     // the match
     BotRunner? _runner;
-    Match? _m;
+    Match? _m;                 // read on this thread only for what never changes: world, balance, team sizes
+    SimFeed? _feed;            // the match itself runs ahead on a worker thread
+    SimFeed.Frame _now = new(); // the newest tick shown
     string _title = "";
     SoldierTruth[] _prev = Array.Empty<SoldierTruth>(), _cur = Array.Empty<SoldierTruth>();
     double _acc, _speed = 1, _overFor;
@@ -64,10 +66,18 @@ public partial class Main : Node3D
     string _shotDir = "";
     int _shotPending = -1;
     bool _shotsMode;
+    // --bench [seconds]: play the match in real time without vsync, then print frames per second (mean and 1 % low)
+    bool _bench;
+    double _benchFor = 60, _benchT;
+    readonly List<double> _frameMs = new();
+    ulong _lastTick;
+    readonly System.Diagnostics.Stopwatch _sw = new();
+    double _tSol, _tFx, _tMap, _sumSol, _sumFx, _sumMap;
     float? _camYawArg;
 
     public override void _ExitTree()
     {
+        _feed?.Dispose();
         if (SoldierView.ProbeFeet) GD.Print($"feet: planted-foot travel {SoldierView.SlipSum:0.000} m over {SoldierView.BodySum:0.0} m of body travel ({100 * SoldierView.SlipSum / Math.Max(1e-9, SoldierView.BodySum):0.00}%)");
         Art.Clear(); Sling.ClearMaterials(); SoldierView.ClearMaterials(); MapView.ClearMaterials();
     }
@@ -93,6 +103,7 @@ public partial class Main : Node3D
                 case "--showcase": _show = next; i++; break;
                 case "--cam-yaw": _camYawArg = Mathf.DegToRad(float.Parse(next, System.Globalization.CultureInfo.InvariantCulture)); i++; break;
                 case "--probe-feet": SoldierView.ProbeFeet = true; break;
+                case "--bench": _bench = true; if (double.TryParse(next, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var bs)) { _benchFor = bs; i++; } break;
                 case "--light": _lightArg = next.Split(',').Select(x => float.Parse(x, System.Globalization.CultureInfo.InvariantCulture)).ToArray(); i++; break;
                 case "--shots":
                     _shotsMode = true;
@@ -121,13 +132,14 @@ public partial class Main : Node3D
         try
         {
             var sc = Scenario.Load(_scenarios[_scenarioIdx]);
+            _feed?.Dispose(); _feed = null;
             _runner = sc.Build(_seed).CreateRunner();
             _m = _runner.Match;
             _title = $"{sc.Name}  seed {_seed}";
         }
         catch (Exception e)
         {
-            _runner = null; _m = null;
+            _runner = null; _m = null; _feed?.Dispose(); _feed = null;
             _error = e.Message;
             GD.PushError(e.ToString());
             return;
@@ -135,7 +147,9 @@ public partial class Main : Node3D
         _prev = new SoldierTruth[_m.Count];
         _shotsSeen = new int[_m.Count];
         _cur = new SoldierTruth[_m.Count];
-        for (int i = 0; i < _m.Count; i++) _prev[i] = _cur[i] = _m.Truth(i);
+        _feed = new SimFeed(_runner);
+        _now = _feed.First;
+        for (int i = 0; i < _m.Count; i++) _prev[i] = _cur[i] = _now.Truth[i];
         BuildWorld(_m.World);
         ApplyCut();
         BuildSoldiers(_m);
@@ -144,29 +158,33 @@ public partial class Main : Node3D
         if (_follow >= _m.Count) _follow = -1;
     }
 
-    void StepSim()
+    /// <summary>Take the next tick from the worker; false when it is not ready yet.</summary>
+    bool StepSim(bool wait = false)
     {
         var m = _m!;
+        if (_feed!.Error is { } err) { _error = err.Message; GD.PushError(err.ToString()); }
+        var f = _feed.Next(wait || _shotsMode);
+        if (f == null) return false;
+        _now = f;
         (_prev, _cur) = (_cur, _prev);
-        _runner!.Step();
-        for (int i = 0; i < m.Count; i++) _cur[i] = m.Truth(i);
+        for (int i = 0; i < m.Count; i++) _cur[i] = f.Truth[i];
         // a shot leaves the muzzle in the tick the shooter's counter goes up; its Shot event comes when the bullet stops
         for (int i = 0; i < m.Count; i++)
         {
-            int n = m.Stats(i).Shots;
+            int n = f.Shots[i];
             if (n > _shotsSeen[i])
             {
                 _soldiers[i].Shot = true;
                 if (!_fired.TryGetValue(i, out var q)) _fired[i] = q = new Queue<double>();
-                q.Enqueue(m.Time);
+                q.Enqueue(f.Time);
             }
             _shotsSeen[i] = n;
         }
-        foreach (var e in m.Events)
+        foreach (var e in f.Events)
         {
             switch (e.Type)
             {
-                case EventType.Shot: OnShot(e, m.Time); break;
+                case EventType.Shot: OnShot(e, f.Time); break;
                 case EventType.Hit:
                 {
                     var dir = new Vector3((float)e.Pos2.X, 0, (float)e.Pos2.Y);
@@ -183,6 +201,7 @@ public partial class Main : Node3D
                     break;
             }
         }
+        return true;
     }
 
     /// <summary>A bullet stopped: a tracer from the drawn muzzle to that point, and what it hit reacts when it arrives.</summary>
@@ -228,6 +247,7 @@ public partial class Main : Node3D
     public override void _Process(double delta)
     {
         if (_shotPending >= 0) { SaveShot(); return; }
+        if (_bench) BenchFrame();
         // frames for --shots advance by a fixed 1/60 s, so they do not depend on how fast this machine renders
         if (_shotsMode) delta = 1.0 / 60;
         HandleCameraKeys((float)delta);
@@ -235,18 +255,19 @@ public partial class Main : Node3D
 
         if (_m != null)
         {
-            if (!_paused && !_m.Over)
+            if (!_paused && !_now.Over)
             {
                 _acc += delta * _speed;
                 int steps = 0;
-                while (_acc >= Dt && !_m.Over && steps++ < 400)
+                while (_acc >= Dt && !_now.Over && steps++ < 400)
                 {
-                    StepSim();
+                    bool got = StepSim();
+                    if (!got) { _acc = Math.Min(_acc, Dt); break; }   // the worker is behind: hold the last tick
                     _acc -= Dt;
-                    if (_shots.Count > 0 && _m.Time >= _shots[0]) { _shots.RemoveAt(0); _shotPending = 2; _acc = 0; break; }
+                    if (_shots.Count > 0 && _now.Time >= _shots[0]) { _shots.RemoveAt(0); _shotPending = 2; _acc = 0; break; }
                 }
             }
-            if (_m.Over)
+            if (_now.Over)
             {
                 _overFor += delta;
                 if (_shots.Count > 0) { _shots.Clear(); _shotPending = 2; }
@@ -254,17 +275,42 @@ public partial class Main : Node3D
             }
         }
 
-        float alpha = _m == null || _m.Over || _paused ? 1 : (float)Math.Clamp(_acc / Dt, 0, 1);
+        float alpha = _m == null || _now.Over || _paused ? 1 : (float)Math.Clamp(_acc / Dt, 0, 1);
         UpdateCamera(alpha);
         if (_m != null)
         {
-            float simDt = _paused || _m.Over ? 0 : (float)(delta * _speed);
+            float simDt = _paused || _now.Over ? 0 : (float)(delta * _speed);
+            _sw.Restart();
             for (int i = 0; i < _soldiers.Length; i++) _soldiers[i].Update(_prev[i], _cur[i], alpha, simDt, _cam, _debug && _labels);
+            _tSol = _sw.Elapsed.TotalMilliseconds; _sw.Restart();
             _fx.Update(simDt);
+            _tFx = _sw.Elapsed.TotalMilliseconds; _sw.Restart();
             UpdateMap(simDt);
+            _tMap = _sw.Elapsed.TotalMilliseconds;
             DrawCones(alpha);
         }
         UpdateHud();
+    }
+
+    void BenchFrame()
+    {
+        ulong now = Time.GetTicksUsec();
+        if (_lastTick == 0) { DisplayServer.WindowSetVsyncMode(DisplayServer.VSyncMode.Disabled); _lastTick = now; return; }
+        double ms = (now - _lastTick) / 1000.0; _lastTick = now;
+        if (_benchT > 2) { _sumSol += _tSol; _sumFx += _tFx; _sumMap += _tMap; }
+        _benchT += ms / 1000;
+        if (_benchT > 2) _frameMs.Add(ms);   // the first two seconds warm up shaders and caches
+        if (_benchT < _benchFor + 2 && !_now.Over) return;
+        var sorted = _frameMs.OrderByDescending(x => x).ToList();
+        int n1 = Math.Max(1, sorted.Count / 100);
+        double mean = 1000 * sorted.Count / sorted.Sum(), low = 1000 * n1 / sorted.Take(n1).Sum();
+        var vp = GetViewport().GetVisibleRect().Size;
+        GD.Print($"bench {_title}: {sorted.Count} frames over {sorted.Sum() / 1000:0.0} s at {vp.X}x{vp.Y}, " +
+                 $"mean {mean:0.0} fps, 1% low {low:0.0} fps, worst frame {sorted[0]:0.0} ms, grass {_map?.GrassCount}, " +
+                 $"{RenderingServer.GetRenderingInfo(RenderingServer.RenderingInfo.TotalDrawCallsInFrame)} draw calls, " +
+                 $"{RenderingServer.GetRenderingInfo(RenderingServer.RenderingInfo.TotalPrimitivesInFrame) / 1000} k primitives; " +
+                 $"CPU per frame: soldiers {_sumSol / sorted.Count:0.00} ms, effects {_sumFx / sorted.Count:0.00} ms, map {_sumMap / sorted.Count:0.00} ms (the match runs on its own thread)");
+        GetTree().Quit();
     }
 
     void SaveShot()
@@ -277,7 +323,7 @@ public partial class Main : Node3D
         var inv = System.Globalization.CultureInfo.InvariantCulture;
         string path = Path.Combine(dir, _show != null
             ? $"show-{_show}-t{_showT.ToString("0.00", inv)}.png"
-            : $"{Path.GetFileNameWithoutExtension(_scenarios[_scenarioIdx])}-{_seed}-t{_m!.Time.ToString("000.0", inv)}.png");
+            : $"{Path.GetFileNameWithoutExtension(_scenarios[_scenarioIdx])}-{_seed}-t{_now.Time.ToString("000.0", inv)}.png");
         GetViewport().GetTexture().GetImage().SavePng(path);
         GD.Print("shot " + path);
         if (_shots.Count == 0) GetTree().Quit();
@@ -292,7 +338,7 @@ public partial class Main : Node3D
             switch (k.Keycode)
             {
                 case Key.Space: _paused = !_paused; break;
-                case Key.Period: if (_m != null && !_m.Over) { StepSim(); _acc = 0; _paused = true; } break;
+                case Key.Period: if (_m != null && !_now.Over) { StepSim(true); _acc = 0; _paused = true; } break;
                 case Key.Equal or Key.KpAdd: _speed = Math.Min(16, _speed * 2); break;
                 case Key.Minus or Key.KpSubtract: _speed = Math.Max(0.125, _speed / 2); break;
                 case Key.R: StartMatch(); break;
@@ -542,17 +588,17 @@ public partial class Main : Node3D
     void UpdateHud()
     {
         if (_m == null) { _hud.Text = _error.Length > 0 ? "Error: " + _error : "no match"; _banner.Text = ""; return; }
-        var m = _m;
+        var m = _m; var f = _now;
         string state = _paused ? "  PAUSED" : "";
         _hud.Text =
             $"{_title}    [{_scenarioIdx + 1}/{_scenarios.Length}]\n" +
-            $"t = {m.Time:0.0} s    blue {m.AliveCount(0)}/{m.TeamSize(0)}    red {m.AliveCount(1)}/{m.TeamSize(1)}    speed ×{_speed:0.###}{state}" +
+            $"t = {f.Time:0.0} s    blue {f.Alive[0]}/{m.TeamSize(0)}    red {f.Alive[1]}/{m.TeamSize(1)}    speed ×{_speed:0.###}{state}" +
             (_debug ? "\n" : "    Tab debug") + (!_debug ? "" :
             "Tab debug off · Space pause · . step · +/- speed · R restart · N next seed · [ ] scenario · L labels · C cones · H cut walls · Shift+A autoplay " + (_auto ? "on" : "off") + "\n" +
             "WASD / RMB drag pan · Q/E rotate · wheel zoom · F / Shift+F follow soldier · G free camera") + (_follow >= 0 ? $"    following {_follow}" : "");
-        _banner.Text = m.Over
-            ? (m.Result.Winner < 0 ? "DRAW" : m.Result.Winner == 0 ? "BLUE WINS" : "RED WINS") + $"  ({m.Result.Reason}, {m.Time:0.0} s)"
+        _banner.Text = f.Over
+            ? (f.Result.Winner < 0 ? "DRAW" : f.Result.Winner == 0 ? "BLUE WINS" : "RED WINS") + $"  ({f.Result.Reason}, {f.Time:0.0} s)"
             : "";
-        _banner.AddThemeColorOverride("font_color", m.Over && m.Result.Winner >= 0 ? TeamCol[m.Result.Winner].Lightened(0.3f) : Colors.White);
+        _banner.AddThemeColorOverride("font_color", f.Over && f.Result.Winner >= 0 ? TeamCol[f.Result.Winner].Lightened(0.3f) : Colors.White);
     }
 }

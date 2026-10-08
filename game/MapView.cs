@@ -37,7 +37,9 @@ sealed class MapView
         if (triplanar) { m.Uv1Triplanar = true; m.Uv1WorldTriplanar = true; m.Uv1Scale = Vector3.One / size; m.Uv1TriplanarSharpness = 4; }
         return _mats[key] = m;
     }
-    public static void ClearMaterials() => _mats.Clear();
+    public static void ClearMaterials() { _mats.Clear(); _weathered = null; }
+    static StandardMaterial3D? _weathered;
+    static StandardMaterial3D Tinted(StandardMaterial3D m, float k) { var t = (StandardMaterial3D)m.Duplicate(); t.AlbedoColor = new Color(k, k, k); return t; }
 
     /// <summary>Collects primitive meshes per material and bakes them into one ArrayMesh with a surface per material.</summary>
     sealed class Builder
@@ -377,7 +379,8 @@ sealed class MapView
         float len = (float)Vec2.Distance(o.A, o.B), r = (float)o.R, h = (float)o.H;
         var t = Along(o.A, o.B);
         var b = new Builder();
-        var conc = M("concrete", 1.3f);
+        // weathered: the range's jersey barriers read darker than the bare texture under this sun
+        var conc = _weathered ??= Tinted(M("concrete", 1.3f), 0.78f);
         b.Box(conc, t * new Transform3D(Basis.Identity, V(len / 2, h / 2, 0)), V(len, h, 2 * r));
         foreach (float x in new[] { 0f, len })
             b.Add(conc, new CylinderMesh { TopRadius = r, BottomRadius = r, Height = h, RadialSegments = 14, Rings = 1 }, t * new Transform3D(Basis.Identity, V(x, h / 2, 0)));
