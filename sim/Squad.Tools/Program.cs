@@ -77,25 +77,37 @@ static void RenderCmd(Args o)
     var r = new Renderer(m.World, scale) { FocusTeam = (int)o.Num("focus", 0) };
     var frames = new List<SKBitmap>();
     var recent = new List<GameEvent>();
+    string? framesDir = o.Has("frames") ? o.Get("frames", "") : null;  // one numbered PNG per frame, for ffmpeg
+    int frameCount = 0;
+    void Shoot()
+    {
+        var f = r.Frame(m, runner, recent, $"{sc.Name}  seed {seed}");
+        if (framesDir == null) { frames.Add(f); }
+        else { Renderer.SavePng(f, Path.Combine(framesDir, $"{frameCount:00000}.png")); f.Dispose(); }
+        frameCount++;
+    }
     double next = from;
     while (true)
     {
         if (m.Time + 1e-9 >= next)
         {
-            frames.Add(r.Frame(m, runner, recent, $"{sc.Name}  seed {seed}"));
+            Shoot();
             next += every;
             if (next > to + 1e-9) break;
         }
-        if (m.Over) { frames.Add(r.Frame(m, runner, recent, $"{sc.Name}  seed {seed}")); break; }
+        if (m.Over) { Shoot(); break; }
         runner.Step();
         recent.RemoveAll(e => m.Tick - e.Tick > 10);
         foreach (var e in m.Events) if (e.Type is EventType.Shot or EventType.Hit) recent.Add(e);
     }
-    using var sheet = Renderer.Sheet(frames, Math.Min(cols, frames.Count));
-    string outPath = o.Get("out", $"out/{sc.Name}-{seed}.png");
-    Renderer.SavePng(sheet, outPath);
+    string outPath = framesDir ?? o.Get("out", $"out/{sc.Name}-{seed}.png");
+    if (framesDir == null)
+    {
+        using var sheet = Renderer.Sheet(frames, Math.Min(cols, frames.Count));
+        Renderer.SavePng(sheet, outPath);
+    }
     foreach (var f in frames) f.Dispose();
-    Console.WriteLine($"{frames.Count} frames → {outPath}; result: {(m.Over ? $"winner {m.Result.Winner} ({m.Result.Reason}) at {m.Time:0.0}s" : "running")}");
+    Console.WriteLine($"{frameCount} frames → {outPath}; result: {(m.Over ? $"winner {m.Result.Winner} ({m.Result.Reason}) at {m.Time:0.0}s" : "running")}");
 }
 
 /// <summary>Frames of a recorded match (e.g. a trained network's episode from train/eval.py --record).</summary>
