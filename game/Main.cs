@@ -10,8 +10,7 @@ public partial class Main : Node3D
     const double Dt = 1.0 / 30;
     const float TracerLife = 0.12f, HitLife = 0.35f;
 
-    static readonly Color[] TeamCol = { new("4fa8ff"), new("ff6a55") };
-    static readonly Color[] TeamDark = { new("1d4f85"), new("85301f") };
+    internal static readonly Color[] TeamCol = { new("4fa8ff"), new("ff6a55") };
 
     // what to play
     string _simDir = "";
@@ -26,7 +25,8 @@ public partial class Main : Node3D
     string _title = "";
     SoldierTruth[] _prev = Array.Empty<SoldierTruth>(), _cur = Array.Empty<SoldierTruth>();
     double _acc, _speed = 1, _overFor;
-    bool _paused, _labels = true, _cones = true, _auto = true, _cut;
+    bool _paused, _debug, _labels = true, _cones = true, _auto = true, _cut;
+    int[] _shotsSeen = Array.Empty<int>();
     readonly List<(MeshInstance3D mesh, float h)> _tallWalls = new();  // cut down to waist height with H
     readonly List<(Vector3 a, Vector3 b, double t)> _tracers = new();
     readonly List<(Vector3 p, double t)> _hits = new();
@@ -38,6 +38,19 @@ public partial class Main : Node3D
     ImmediateMesh _fxMesh = null!, _coneIm = null!;
     StandardMaterial3D _fxMat = null!, _coneMat = null!;
     Camera3D _cam = null!;
+    Godot.Environment _env = null!;
+    DirectionalLight3D _sun = null!;
+    internal static readonly Color Bg = new("20251f");
+    DirectionalLight3D _skyLight = null!, _rim = null!;
+    // ambient (ground colour), sky light from above, sun, rim, exposure; --light a,k,s,r,e overrides them for fitting
+    static readonly float[] Light = { 2.03f, 0.32f, 0.73f, 0.43f, 1.03f };
+    float[]? _lightArg;
+
+    void ApplyLight(float[] l)
+    {
+        _env.AmbientLightEnergy = l[0]; _skyLight.LightEnergy = l[1]; _sun.LightEnergy = l[2]; _rim.LightEnergy = l[3];
+        _env.TonemapExposure = l[4];
+    }
     Vector3 _target;
     float _camYaw = Mathf.Pi / 4, _camPitch = Mathf.DegToRad(30), _zoom = 30;
     float? _zoomArg;
@@ -49,6 +62,9 @@ public partial class Main : Node3D
     readonly List<double> _shots = new();
     string _shotDir = "";
     int _shotPending = -1;
+    bool _shotsMode;
+
+    public override void _ExitTree() => Art.Clear();
 
     public override void _Ready()
     {
@@ -68,7 +84,10 @@ public partial class Main : Node3D
                 case "--zoom": _zoomArg = float.Parse(next, System.Globalization.CultureInfo.InvariantCulture); i++; break;
                 case "--follow": _follow = int.Parse(next); i++; break;
                 case "--cut": _cut = true; break;
+                case "--showcase": _show = next; i++; break;
+                case "--light": _lightArg = next.Split(',').Select(x => float.Parse(x, System.Globalization.CultureInfo.InvariantCulture)).ToArray(); i++; break;
                 case "--shots":
+                    _shotsMode = true;
                     foreach (var s in next.Split(',')) _shots.Add(double.Parse(s, System.Globalization.CultureInfo.InvariantCulture));
                     i++; break;
             }
@@ -80,7 +99,7 @@ public partial class Main : Node3D
         _scenarioIdx = Math.Max(0, Array.FindIndex(_scenarios, p => Path.GetFileNameWithoutExtension(p) == want || Path.GetFullPath(p) == Path.GetFullPath(want)));
 
         BuildStatic();
-        StartMatch();
+        if (_show != null) StartShowcase(); else StartMatch();
     }
 
     // ───────────────────────── match lifecycle ─────────────────────────
@@ -106,6 +125,7 @@ public partial class Main : Node3D
             return;
         }
         _prev = new SoldierTruth[_m.Count];
+        _shotsSeen = new int[_m.Count];
         _cur = new SoldierTruth[_m.Count];
         for (int i = 0; i < _m.Count; i++) _prev[i] = _cur[i] = _m.Truth(i);
         BuildWorld(_m.World);
@@ -122,12 +142,28 @@ public partial class Main : Node3D
         (_prev, _cur) = (_cur, _prev);
         _runner!.Step();
         for (int i = 0; i < m.Count; i++) _cur[i] = m.Truth(i);
+        // a shot leaves the muzzle in the tick the shooter's counter goes up; its Shot event comes when the bullet stops
+        for (int i = 0; i < m.Count; i++)
+        {
+            int n = m.Stats(i).Shots;
+            if (n > _shotsSeen[i]) _soldiers[i].Shot = true;
+            _shotsSeen[i] = n;
+        }
         foreach (var e in m.Events)
         {
-            if (e.Type == EventType.Shot)
-                _tracers.Add((W(e.Pos, e.H), W(e.Pos2, e.H2), m.Time));
-            else if (e.Type == EventType.Hit)
-                _hits.Add((W(e.Pos, e.H > 0 ? e.H : 1.2), m.Time));
+            switch (e.Type)
+            {
+                case EventType.Shot:
+                    _tracers.Add((W(e.Pos, e.H), W(e.Pos2, e.H2), m.Time));
+                    break;
+                case EventType.Hit:
+                    _hits.Add((W(e.Pos, e.H > 0 ? e.H : 1.2), m.Time));
+                    _soldiers[e.Other].Flinch = (new Vector3((float)e.Pos2.X, 0, (float)e.Pos2.Y), W(e.Pos, e.H), 1f);
+                    break;
+                case EventType.ReloadStart:
+                    _soldiers[e.Agent].ReloadEmpty = e.Value > 0;
+                    break;
+            }
         }
         _tracers.RemoveAll(t => m.Time - t.t > TracerLife);
         _hits.RemoveAll(h => m.Time - h.t > HitLife);
@@ -136,7 +172,10 @@ public partial class Main : Node3D
     public override void _Process(double delta)
     {
         if (_shotPending >= 0) { SaveShot(); return; }
+        // frames for --shots advance by a fixed 1/60 s, so they do not depend on how fast this machine renders
+        if (_shotsMode) delta = 1.0 / 60;
         HandleCameraKeys((float)delta);
+        if (_show != null) { ProcessShowcase(delta); return; }
 
         if (_m != null)
         {
@@ -163,7 +202,8 @@ public partial class Main : Node3D
         UpdateCamera(alpha);
         if (_m != null)
         {
-            for (int i = 0; i < _soldiers.Length; i++) _soldiers[i].Update(_prev[i], _cur[i], alpha, (float)delta, _cam, _labels);
+            float simDt = _paused || _m.Over ? 0 : (float)(delta * _speed);
+            for (int i = 0; i < _soldiers.Length; i++) _soldiers[i].Update(_prev[i], _cur[i], alpha, simDt, _cam, _debug && _labels);
             DrawFx();
             DrawCones(alpha);
         }
@@ -177,7 +217,10 @@ public partial class Main : Node3D
         _shotPending = -1;
         string dir = string.IsNullOrEmpty(_shotDir) ? Path.Combine(_simDir, "out", "godot") : Path.GetFullPath(_shotDir, Path.Combine(_simDir, ".."));
         Directory.CreateDirectory(dir);
-        string path = Path.Combine(dir, $"{Path.GetFileNameWithoutExtension(_scenarios[_scenarioIdx])}-{_seed}-t{_m!.Time.ToString("000.0", System.Globalization.CultureInfo.InvariantCulture)}.png");
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        string path = Path.Combine(dir, _show != null
+            ? $"show-{_show}-t{_showT.ToString("0.00", inv)}.png"
+            : $"{Path.GetFileNameWithoutExtension(_scenarios[_scenarioIdx])}-{_seed}-t{_m!.Time.ToString("000.0", inv)}.png");
         GetViewport().GetTexture().GetImage().SavePng(path);
         GD.Print("shot " + path);
         if (_shots.Count == 0) GetTree().Quit();
@@ -199,6 +242,7 @@ public partial class Main : Node3D
                 case Key.N: _seed++; StartMatch(); break;
                 case Key.Bracketright: _scenarioIdx = (_scenarioIdx + 1) % Math.Max(1, _scenarios.Length); StartMatch(); break;
                 case Key.Bracketleft: _scenarioIdx = (_scenarioIdx + _scenarios.Length - 1) % Math.Max(1, _scenarios.Length); StartMatch(); break;
+                case Key.Tab: _debug = !_debug; break;
                 case Key.L: _labels = !_labels; break;
                 case Key.F: FollowNext(k.ShiftPressed ? -1 : 1); break;
                 case Key.G: _follow = -1; break;
@@ -261,37 +305,55 @@ public partial class Main : Node3D
         if (_follow >= 0 && _m != null)
         {
             var p = _prev[_follow].Pos + (_cur[_follow].Pos - _prev[_follow].Pos) * alpha;
-            _target = _target.Lerp(W(p, 0.8), 0.25f);
+            _target = _target.Lerp(W(p, 0.9), _shotsMode ? 1 : 0.25f);
         }
         var off = new Vector3(Mathf.Sin(_camYaw) * Mathf.Cos(_camPitch), Mathf.Sin(_camPitch), Mathf.Cos(_camYaw) * Mathf.Cos(_camPitch));
         _cam.Size = _zoom;
-        _cam.LookAtFromPosition(_target + off * 120, _target, Vector3.Up);
+        // as close as the bottom edge of the view allows (an ortho ray there meets the ground 1.73·size/2 nearer),
+        // so the single directional shadow split covers as little depth as possible
+        float dist = 20 + _zoom * 1.2f;
+        _cam.Far = dist * 2 + 40;
+        _sun.DirectionalShadowMaxDistance = dist + _zoom * 1.2f;
+        _cam.LookAtFromPosition(_target + off * dist, _target, Vector3.Up);
     }
 
     // ───────────────────────── static scene ─────────────────────────
 
     void BuildStatic()
     {
-        var env = new Godot.Environment
+        // Light as on the concept's firing range (soldier-main.js): a hemisphere light (sky dfe7d5 over ground 4d4639),
+        // a warm sun with soft shadows from (−6, 10, 3), a cool rim light from (4, 5, −6), ACES filmic. The compatibility
+        // renderer has no hemisphere light and ignores the energy of sky ambient, so the hemisphere is the ground colour
+        // as ambient plus a shadowless sky-coloured light from straight above. The energies are fitted to the concept's
+        // frames of the same soldier (Light below), not converted from three.js units: the two engines differ there.
+        _env = new Godot.Environment
         {
             BackgroundMode = Godot.Environment.BGMode.Color,
-            BackgroundColor = new Color("15181300"),
+            BackgroundColor = Bg,
             AmbientLightSource = Godot.Environment.AmbientSource.Color,
-            AmbientLightColor = new Color("c8d0e0"),
-            AmbientLightEnergy = 0.45f,
+            AmbientLightColor = new Color("4d4639"),
+            ReflectedLightSource = Godot.Environment.ReflectionSource.Disabled,
+            TonemapMode = Godot.Environment.ToneMapper.Aces,
         };
-        AddChild(new WorldEnvironment { Environment = env });
-        var sun = new DirectionalLight3D
+        AddChild(new WorldEnvironment { Environment = _env });
+        _skyLight = new DirectionalLight3D { LightColor = new Color("dfe7d5"), LightSpecular = 0.3f };
+        AddChild(_skyLight);
+        _skyLight.LookAtFromPosition(new Vector3(0, 1, 0.001f), Vector3.Zero, Vector3.Up);
+        _sun = new DirectionalLight3D
         {
-            RotationDegrees = new Vector3(-55, 35, 0),
-            LightEnergy = 1.1f,
-            LightColor = new Color("fff3dc"),
+            LightColor = new Color("ffe8bf"),
             ShadowEnabled = true,
+            ShadowBias = 0.02f,
+            ShadowNormalBias = 1.0f,
+            ShadowBlur = 1.5f,
+            DirectionalShadowMode = DirectionalLight3D.ShadowMode.Orthogonal,
         };
-        sun.DirectionalShadowMode = DirectionalLight3D.ShadowMode.Orthogonal;
-        sun.DirectionalShadowMaxDistance = 220;
-        sun.ShadowBias = 0.03f;
-        AddChild(sun);
+        AddChild(_sun);
+        _sun.LookAtFromPosition(new Vector3(-6, 10, 3), Vector3.Zero, Vector3.Up);
+        _rim = new DirectionalLight3D { LightColor = new Color("acc3ca") };
+        AddChild(_rim);
+        _rim.LookAtFromPosition(new Vector3(4, 5, -6), Vector3.Zero, Vector3.Up);
+        ApplyLight(_lightArg ?? Light);
 
         _cam = new Camera3D { Projection = Camera3D.ProjectionType.Orthogonal, Near = 1, Far = 500, Current = true };
         AddChild(_cam);
@@ -461,7 +523,7 @@ public partial class Main : Node3D
         for (int i = 0; i < m.Count; i++)
         {
             var t = m.Truth(i);
-            _soldiers[i] = new SoldierView(i, _runner!.Brains[i], m.B.Damage.Hp, Mat(TeamCol[t.Team], 0.7f), Mat(TeamDark[t.Team]), _worldRoot!, _overlay);
+            _soldiers[i] = new SoldierView(i, t.Team, _runner!.Brains[i], m.B.Damage.Hp, _worldRoot!, _overlay);
         }
     }
 
@@ -505,7 +567,7 @@ public partial class Main : Node3D
     void DrawCones(float alpha)
     {
         _coneIm.ClearSurfaces();
-        if (!_cones) return;
+        if (!_cones || !_debug) return;
         var m = _m!;
         float half = (float)m.B.Perception.ConeHalf, range = (float)Math.Min(m.B.Perception.ViewRange, 12);
         const int seg = 14;
@@ -537,106 +599,13 @@ public partial class Main : Node3D
         string state = _paused ? "  PAUSED" : "";
         _hud.Text =
             $"{_title}    [{_scenarioIdx + 1}/{_scenarios.Length}]\n" +
-            $"t = {m.Time:0.0} s    blue {m.AliveCount(0)}/{m.TeamSize(0)}    red {m.AliveCount(1)}/{m.TeamSize(1)}    speed ×{_speed:0.###}{state}\n" +
-            "Space pause · . step · +/- speed · R restart · N next seed · [ ] scenario · L labels · C cones · H cut walls · Shift+A autoplay " + (_auto ? "on" : "off") + "\n" +
-            "WASD / RMB drag pan · Q/E rotate · wheel zoom · F / Shift+F follow soldier · G free camera" + (_follow >= 0 ? $"    following {_follow}" : "");
+            $"t = {m.Time:0.0} s    blue {m.AliveCount(0)}/{m.TeamSize(0)}    red {m.AliveCount(1)}/{m.TeamSize(1)}    speed ×{_speed:0.###}{state}" +
+            (_debug ? "\n" : "    Tab debug") + (!_debug ? "" :
+            "Tab debug off · Space pause · . step · +/- speed · R restart · N next seed · [ ] scenario · L labels · C cones · H cut walls · Shift+A autoplay " + (_auto ? "on" : "off") + "\n" +
+            "WASD / RMB drag pan · Q/E rotate · wheel zoom · F / Shift+F follow soldier · G free camera") + (_follow >= 0 ? $"    following {_follow}" : "");
         _banner.Text = m.Over
             ? (m.Result.Winner < 0 ? "DRAW" : m.Result.Winner == 0 ? "BLUE WINS" : "RED WINS") + $"  ({m.Result.Reason}, {m.Time:0.0} s)"
             : "";
         _banner.AddThemeColorOverride("font_color", m.Over && m.Result.Winner >= 0 ? TeamCol[m.Result.Winner].Lightened(0.3f) : Colors.White);
-    }
-}
-
-/// <summary>One soldier: a capsule body that sinks when crouching, a head that turns with the aim, a rifle that is
-/// lowered or raised, and a 2D label with strategy, intent and health drawn over the 3D view.</summary>
-sealed class SoldierView
-{
-    const float StandH = 1.5f, CrouchH = 0.85f;
-    readonly Node3D _root, _body, _torso, _look, _gun;
-    readonly MeshInstance3D _torsoMesh;
-    readonly Label _label;
-    readonly ColorRect _hpBg, _hpFill;
-    readonly IBrain? _brain;
-    readonly string _name;
-    readonly double _maxHp;
-    readonly StandardMaterial3D _deadMat;
-    float _fall;
-
-    public SoldierView(int id, IBrain? brain, double maxHp, StandardMaterial3D team, StandardMaterial3D dark, Node3D parent, Control overlay)
-    {
-        _brain = brain; _maxHp = maxHp;
-        _name = $"{id} {brain?.Name ?? ""}";
-        _deadMat = new StandardMaterial3D { AlbedoColor = dark.AlbedoColor.Darkened(0.35f), Roughness = 1 };
-
-        _root = new Node3D(); parent.AddChild(_root);
-        _body = new Node3D(); _root.AddChild(_body);
-        _torso = new Node3D(); _body.AddChild(_torso);
-        _torsoMesh = new MeshInstance3D { Mesh = new CapsuleMesh { Radius = 0.24f, Height = 1, RadialSegments = 12, Rings = 4 }, MaterialOverride = team, Position = new Vector3(0, 0.5f, 0) };
-        _torso.AddChild(_torsoMesh);
-
-        _look = new Node3D(); _body.AddChild(_look);
-        _look.AddChild(new MeshInstance3D { Mesh = new SphereMesh { Radius = 0.15f, Height = 0.3f, RadialSegments = 12, Rings = 6 }, MaterialOverride = dark });
-        // visor: shows where he looks
-        _look.AddChild(new MeshInstance3D { Mesh = new BoxMesh { Size = new Vector3(0.2f, 0.07f, 0.08f) }, MaterialOverride = new StandardMaterial3D { AlbedoColor = new Color("e8e4d0") }, Position = new Vector3(0, 0.02f, 0.13f) });
-
-        _gun = new Node3D(); _body.AddChild(_gun);
-        _gun.AddChild(new MeshInstance3D { Mesh = new BoxMesh { Size = new Vector3(0.07f, 0.1f, 0.9f) }, MaterialOverride = new StandardMaterial3D { AlbedoColor = new Color("2b2b2b"), Roughness = 0.6f }, Position = new Vector3(0, 0, 0.35f) });
-
-        _label = Main.MakeLabel(12);
-        _label.AddThemeColorOverride("font_color", team.AlbedoColor.Lightened(0.45f));
-        _hpBg = new ColorRect { Color = new Color(0, 0, 0, 0.6f), Size = new Vector2(34, 4), MouseFilter = Control.MouseFilterEnum.Ignore };
-        _hpFill = new ColorRect { Size = new Vector2(34, 4), MouseFilter = Control.MouseFilterEnum.Ignore };
-        overlay.AddChild(_hpBg); overlay.AddChild(_hpFill); overlay.AddChild(_label);
-    }
-
-    public void Free()
-    {
-        _label.QueueFree(); _hpBg.QueueFree(); _hpFill.QueueFree();
-        // 3D nodes go away with the world root
-    }
-
-    public void Update(in SoldierTruth a, in SoldierTruth b, float t, float dt, Camera3D cam, bool labels)
-    {
-        var pos = a.Pos + (b.Pos - a.Pos) * t;
-        float yaw = Mathf.LerpAngle((float)a.Yaw, (float)b.Yaw, t);
-        float aimYaw = Mathf.LerpAngle((float)a.AimYaw, (float)b.AimYaw, t);
-        float crouch = Mathf.Lerp((float)a.Crouch, (float)b.Crouch, t);
-        float raise = Mathf.Lerp((float)a.Raise, (float)b.Raise, t);
-        float pitch = Mathf.Lerp((float)a.AimPitch, (float)b.AimPitch, t);
-
-        _root.Position = new Vector3((float)pos.X, 0, (float)pos.Y);
-        _root.Rotation = new Vector3(0, yaw, 0);
-        float h = Mathf.Lerp(StandH, CrouchH, Math.Clamp(crouch, 0, 1));
-        _torso.Scale = new Vector3(1, h, 1);
-        _look.Position = new Vector3(0, h + 0.13f, 0);
-        _look.Rotation = new Vector3(0, aimYaw - yaw, 0);
-        _gun.Position = new Vector3(-0.2f, h - 0.17f, 0.05f);
-        // lowered rifle points down and ahead; raised it follows the aim
-        _gun.Rotation = new Vector3(Mathf.Lerp(0.75f, -pitch, Math.Clamp(raise, 0, 1)), aimYaw - yaw, 0);
-
-        if (!b.Alive)
-        {
-            if (_fall == 0) { _torsoMesh.MaterialOverride = _deadMat; _gun.Visible = false; }
-            _fall = Math.Min(1, _fall + dt * 3);
-            _body.Rotation = new Vector3(Mathf.Pi / 2 * _fall * _fall, 0, 0);
-            _body.Position = new Vector3(0, 0.15f * _fall, 0);
-            _label.Visible = _hpBg.Visible = _hpFill.Visible = false;
-            return;
-        }
-        if (_fall != 0) { _fall = 0; _body.Rotation = Vector3.Zero; _body.Position = Vector3.Zero; _gun.Visible = true; }
-
-        var head = _root.Position + new Vector3(0, h + 0.5f, 0);
-        bool show = labels && !cam.IsPositionBehind(head);
-        _label.Visible = _hpBg.Visible = _hpFill.Visible = show;
-        if (!show) return;
-        var sp = cam.UnprojectPosition(head);
-        string intent = _brain?.Intent ?? "";
-        _label.Text = $"{_name} {intent}{(b.Reloading ? " ⟳" : "")}";
-        _label.Position = sp + new Vector2(-_label.Size.X / 2, -22);
-        _hpBg.Position = sp + new Vector2(-17, -4);
-        float frac = (float)Math.Clamp(b.Hp / _maxHp, 0, 1);
-        _hpFill.Position = _hpBg.Position;
-        _hpFill.Size = new Vector2(34 * frac, 4);
-        _hpFill.Color = frac > 0.5f ? new Color("7cd65a") : frac > 0.25f ? new Color("e8c547") : new Color("e04a3a");
     }
 }
