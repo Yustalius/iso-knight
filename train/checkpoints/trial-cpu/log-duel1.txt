@@ -1,0 +1,54 @@
+21:05:22 policy: 0.34 M parameters, device cpu, recurrent False
+21:05:22 === stage duel: ['train-duel', 'train-duel-gen'], 64 matches × 1 learner slots, budget 8.0 M steps
+21:05:32 [duel]   0.04 M     3952 st/s  win 50.8% draw  1.1%  ep  9.0s  ent 5.24  kl 0.0098  vloss 0.118  ev 0.29  shaping 0.99  train-duel-gen:52% train-duel:51%
+21:05:42 [duel]   0.08 M     4152 st/s  win 53.5% draw  2.2%  ep 11.3s  ent 5.35  kl 0.0092  vloss 0.104  ev 0.34  shaping 0.98  train-duel-gen:54% train-duel:50%
+21:05:52 [duel]   0.12 M     4148 st/s  win 58.2% draw  1.0%  ep 10.8s  ent 5.29  kl 0.0080  vloss 0.109  ev 0.30  shaping 0.97  train-duel-gen:62% train-duel:54%
+21:06:03 [duel]   0.16 M     4051 st/s  win 54.8% draw  1.0%  ep 10.7s  ent 5.37  kl 0.0077  vloss 0.103  ev 0.33  shaping 0.96  train-duel-gen:61% train-duel:48%
+21:06:18 [duel]   0.20 M     3664 st/s  win 59.8% draw  0.8%  ep 10.6s  ent 5.39  kl 0.0076  vloss 0.100  ev 0.35  shaping 0.95  train-duel-gen:60% train-duel:55%
+21:06:29 [duel]   0.25 M     3694 st/s  win 62.5% draw  1.5%  ep 11.1s  ent 5.48  kl 0.0082  vloss 0.068  ev 0.55  shaping 0.94  train-duel-gen:63% train-duel:64%
+21:06:38 [duel]   0.29 M     3769 st/s  win 64.0% draw  2.0%  ep 11.9s  ent 5.54  kl 0.0080  vloss 0.083  ev 0.43  shaping 0.93  train-duel-gen:62% train-duel:63%
+21:06:47 [duel]   0.33 M     3842 st/s  win 57.5% draw  2.2%  ep 13.5s  ent 5.65  kl 0.0068  vloss 0.094  ev 0.27  shaping 0.92  train-duel-gen:56% train-duel:59%
+21:06:57 [duel]   0.37 M     3899 st/s  win 54.0% draw  2.5%  ep 13.6s  ent 5.62  kl 0.0078  vloss 0.068  ev 0.41  shaping 0.91  train-duel-gen:56% train-duel:50%
+21:07:06 [duel]   0.41 M     3942 st/s  win 56.8% draw  1.8%  ep 13.4s  ent 5.55  kl 0.0074  vloss 0.076  ev 0.42  shaping 0.90  train-duel-gen:58% train-duel:52%
+21:07:15 [duel]   0.45 M     3990 st/s  win 62.5% draw  1.5%  ep 12.8s  ent 5.52  kl 0.0079  vloss 0.074  ev 0.43  shaping 0.89  train-duel-gen:62% train-duel:60%
+21:07:25 [duel]   0.49 M     4005 st/s  win 61.8% draw  2.0%  ep 12.3s  ent 5.59  kl 0.0066  vloss 0.077  ev 0.51  shaping 0.88  train-duel-gen:65% train-duel:62%
+21:07:34 [duel]   0.53 M     4035 st/s  win 67.8% draw  1.5%  ep 12.2s  ent 5.35  kl 0.0099  vloss 0.074  ev 0.40  shaping 0.87  train-duel-gen:72% train-duel:58%
+21:07:44 [duel]   0.57 M     4052 st/s  win 68.2% draw  1.5%  ep 11.1s  ent 5.53  kl 0.0092  vloss 0.066  ev 0.45  shaping 0.86  train-duel-gen:70% train-duel:66%
+21:07:52 [duel]   0.61 M     4086 st/s  win 65.8% draw  2.0%  ep 12.8s  ent 5.55  kl 0.0081  vloss 0.063  ev 0.35  shaping 0.85  train-duel-gen:68% train-duel:63%
+21:08:02 [duel]   0.66 M     4107 st/s  win 62.3% draw  1.8%  ep 13.8s  ent 5.58  kl 0.0078  vloss 0.076  ev 0.44  shaping 0.84  train-duel-gen:67% train-duel:54%
+21:08:11 [duel]   0.70 M     4128 st/s  win 67.2% draw  1.8%  ep 13.4s  ent 5.63  kl 0.0071  vloss 0.058  ev 0.51  shaping 0.83  train-duel-gen:72% train-duel:56%
+21:08:20 [duel]   0.74 M     4144 st/s  win 68.5% draw  2.0%  ep 14.4s  ent 5.62  kl 0.0084  vloss 0.050  ev 0.54  shaping 0.82  train-duel-gen:72% train-duel:62%
+21:08:30 [duel]   0.78 M     4144 st/s  win 70.5% draw  2.8%  ep 14.7s  ent 5.62  kl 0.0075  vloss 0.073  ev 0.36  shaping 0.81  train-duel-gen:71% train-duel:66%
+21:08:40 [duel]   0.82 M     4140 st/s  win 72.0% draw  2.0%  ep 13.3s  ent 5.67  kl 0.0070  vloss 0.051  ev 0.47  shaping 0.80  train-duel-gen:75% train-duel:67%
+21:08:48 [duel]   0.86 M     4167 st/s  win 69.8% draw  2.8%  ep 14.7s  ent 5.60  kl 0.0065  vloss 0.044  ev 0.46  shaping 0.79  train-duel-gen:72% train-duel:66%
+21:08:59 [duel]   0.90 M     4160 st/s  win 71.2% draw  2.0%  ep 13.3s  ent 5.41  kl 0.0082  vloss 0.065  ev 0.24  shaping 0.78  train-duel-gen:76% train-duel:62%
+21:09:09 [duel]   0.94 M     4159 st/s  win 66.5% draw  2.2%  ep 13.6s  ent 5.55  kl 0.0072  vloss 0.059  ev 0.34  shaping 0.77  train-duel-gen:69% train-duel:63%
+21:09:18 [duel]   0.98 M     4175 st/s  win 69.2% draw  1.8%  ep 13.6s  ent 5.41  kl 0.0076  vloss 0.055  ev 0.43  shaping 0.76  train-duel-gen:72% train-duel:64%
+21:09:26 [duel]   1.02 M     4199 st/s  win 72.8% draw  2.2%  ep 14.8s  ent 5.36  kl 0.0068  vloss 0.051  ev 0.44  shaping 0.75  train-duel-gen:75% train-duel:68%
+21:09:36 [duel]   1.06 M     4194 st/s  win 69.2% draw  2.8%  ep 13.5s  ent 5.20  kl 0.0076  vloss 0.057  ev 0.57  shaping 0.74  train-duel-gen:75% train-duel:66%
+21:09:46 [duel]   1.11 M     4192 st/s  win 71.8% draw  1.5%  ep 13.3s  ent 5.42  kl 0.0079  vloss 0.040  ev 0.53  shaping 0.73  train-duel-gen:75% train-duel:64%
+21:09:56 [duel]   1.15 M     4184 st/s  win 65.8% draw  1.5%  ep 13.4s  ent 5.49  kl 0.0076  vloss 0.040  ev 0.56  shaping 0.72  train-duel-gen:64% train-duel:66%
+21:10:08 [duel]   1.19 M     4160 st/s  win 69.2% draw  3.0%  ep 15.0s  ent 5.60  kl 0.0077  vloss 0.045  ev 0.47  shaping 0.71  train-duel-gen:70% train-duel:66%
+21:10:17 [duel]   1.23 M     4164 st/s  win 70.2% draw  3.0%  ep 15.6s  ent 5.33  kl 0.0086  vloss 0.059  ev 0.43  shaping 0.69  train-duel-gen:74% train-duel:68%
+21:10:26 [duel]   1.27 M     4177 st/s  win 68.0% draw  1.2%  ep 12.6s  ent 5.47  kl 0.0077  vloss 0.044  ev 0.52  shaping 0.68  train-duel-gen:70% train-duel:66%
+21:10:35 [duel]   1.31 M     4184 st/s  win 71.8% draw  1.2%  ep 12.9s  ent 5.46  kl 0.0090  vloss 0.060  ev 0.46  shaping 0.67  train-duel-gen:72% train-duel:68%
+21:10:45 [duel]   1.35 M     4189 st/s  win 71.0% draw  0.8%  ep 12.9s  ent 5.49  kl 0.0069  vloss 0.053  ev 0.41  shaping 0.66  train-duel-gen:73% train-duel:68%
+21:10:55 [duel]   1.39 M     4189 st/s  win 72.0% draw  1.0%  ep 14.8s  ent 5.65  kl 0.0068  vloss 0.037  ev 0.55  shaping 0.65  train-duel-gen:73% train-duel:67%
+21:11:05 [duel]   1.43 M     4184 st/s  win 69.2% draw  2.0%  ep 14.1s  ent 5.57  kl 0.0075  vloss 0.053  ev 0.49  shaping 0.64  train-duel-gen:73% train-duel:62%
+21:11:14 [duel]   1.47 M     4192 st/s  win 68.5% draw  2.8%  ep 14.5s  ent 5.56  kl 0.0063  vloss 0.055  ev 0.49  shaping 0.63  train-duel-gen:68% train-duel:62%
+21:11:23 [duel]   1.52 M     4198 st/s  win 72.2% draw  2.2%  ep 13.7s  ent 5.53  kl 0.0072  vloss 0.049  ev 0.53  shaping 0.62  train-duel-gen:74% train-duel:69%
+21:11:32 [duel]   1.56 M     4203 st/s  win 68.8% draw  3.0%  ep 14.8s  ent 5.68  kl 0.0074  vloss 0.033  ev 0.63  shaping 0.61  train-duel-gen:73% train-duel:66%
+21:11:42 [duel]   1.60 M     4208 st/s  win 69.5% draw  1.2%  ep 13.4s  ent 5.46  kl 0.0086  vloss 0.052  ev 0.57  shaping 0.60  train-duel-gen:74% train-duel:58%
+21:11:51 [duel]   1.64 M     4214 st/s  win 71.2% draw  3.0%  ep 13.7s  ent 5.50  kl 0.0076  vloss 0.038  ev 0.63  shaping 0.59  train-duel-gen:75% train-duel:58%
+21:12:00 [duel]   1.68 M     4217 st/s  win 68.8% draw  2.5%  ep 14.0s  ent 5.44  kl 0.0076  vloss 0.045  ev 0.50  shaping 0.58  train-duel-gen:68% train-duel:64%
+21:12:09 [duel]   1.72 M     4229 st/s  win 68.0% draw  3.5%  ep 14.8s  ent 5.41  kl 0.0066  vloss 0.034  ev 0.64  shaping 0.57  train-duel-gen:74% train-duel:64%
+21:12:17 [duel]   1.76 M     4240 st/s  win 71.2% draw  2.5%  ep 13.4s  ent 5.49  kl 0.0072  vloss 0.043  ev 0.56  shaping 0.56  train-duel-gen:75% train-duel:66%
+21:12:26 [duel]   1.80 M     4248 st/s  win 69.8% draw  1.2%  ep 13.5s  ent 5.56  kl 0.0071  vloss 0.050  ev 0.50  shaping 0.55  train-duel-gen:74% train-duel:68%
+21:12:35 [duel]   1.84 M     4257 st/s  win 70.5% draw  2.2%  ep 13.9s  ent 5.35  kl 0.0074  vloss 0.038  ev 0.55  shaping 0.54  train-duel-gen:74% train-duel:68%
+21:12:44 [duel]   1.88 M     4261 st/s  win 71.5% draw  2.2%  ep 13.4s  ent 5.40  kl 0.0070  vloss 0.039  ev 0.56  shaping 0.53  train-duel-gen:71% train-duel:68%
+21:12:53 [duel]   1.93 M     4268 st/s  win 71.0% draw  3.2%  ep 13.7s  ent 5.43  kl 0.0070  vloss 0.042  ev 0.43  shaping 0.52  train-duel-gen:72% train-duel:69%
+21:13:02 [duel]   1.97 M     4271 st/s  win 76.0% draw  2.2%  ep 13.0s  ent 5.27  kl 0.0075  vloss 0.048  ev 0.37  shaping 0.51  train-duel-gen:78% train-duel:70%
+21:13:11 [duel]   2.01 M     4276 st/s  win 70.5% draw  2.2%  ep 11.8s  ent 5.17  kl 0.0066  vloss 0.038  ev 0.50  shaping 0.50  train-duel-gen:74% train-duel:68%
+21:13:21 [duel]   2.05 M     4273 st/s  win 76.0% draw  2.0%  ep 12.9s  ent 5.10  kl 0.0078  vloss 0.048  ev 0.53  shaping 0.49  train-duel-gen:75% train-duel:72%
+21:13:21 stage duel passed: win rate 76.0% ≥ 75% at 2.05 M steps
+21:13:21 done: checkpoints in /tmp/claude-0/-home-user-iso-knight/1288a417-01f7-579c-9587-111f8d82faba/scratchpad/runs/duel1

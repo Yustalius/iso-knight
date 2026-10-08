@@ -1,0 +1,28 @@
+20:53:31 policy: 0.34 M parameters, device cpu, recurrent False
+20:53:31 === stage aim: ['train-aim'], 64 matches × 1 learner slots, budget 4.0 M steps
+20:53:41 [aim]   0.04 M     4115 st/s  win  0.0% draw 100.0%  ep 45.0s  ent 7.50  kl 0.0041  vloss 0.022  ev 0.02  shaping 0.99  train-aim:0%
+20:53:51 [aim]   0.08 M     4047 st/s  win  0.0% draw 100.0%  ep 45.0s  ent 7.30  kl 0.0059  vloss 0.001  ev -0.79  shaping 0.97  train-aim:0%
+20:54:03 [aim]   0.12 M     3902 st/s  win  0.0% draw 100.0%  ep 45.0s  ent 7.34  kl 0.0072  vloss 0.008  ev 0.47  shaping 0.96  train-aim:0%
+20:54:14 [aim]   0.16 M     3812 st/s  win  0.0% draw 100.0%  ep 45.0s  ent 7.18  kl 0.0072  vloss 0.011  ev 0.41  shaping 0.94  train-aim:0%
+20:54:24 [aim]   0.20 M     3855 st/s  win  0.0% draw 100.0%  ep 45.0s  ent 7.11  kl 0.0064  vloss 0.003  ev 0.94  shaping 0.93  train-aim:0%
+20:54:35 [aim]   0.25 M     3855 st/s  win  0.0% draw 100.0%  ep 45.0s  ent 7.15  kl 0.0074  vloss 0.011  ev 0.27  shaping 0.92  train-aim:0%
+20:55:02 [aim]   0.29 M     3169 st/s  win  0.0% draw 100.0%  ep 45.0s  ent 6.91  kl 0.0059  vloss 0.001  ev 0.59  shaping 0.90  train-aim:0%
+20:55:13 [aim]   0.33 M     3211 st/s  win  0.0% draw 100.0%  ep 45.0s  ent 7.10  kl 0.0071  vloss 0.016  ev 0.22  shaping 0.89  train-aim:0%
+20:55:23 [aim]   0.37 M     3281 st/s  win  0.8% draw 99.2%  ep 44.9s  ent 6.96  kl 0.0057  vloss 0.010  ev 0.54  shaping 0.87  train-aim:2%
+20:55:34 [aim]   0.41 M     3326 st/s  win  2.0% draw 98.0%  ep 44.8s  ent 6.79  kl 0.0068  vloss 0.018  ev 0.84  shaping 0.86  train-aim:4%
+20:55:46 [aim]   0.45 M     3344 st/s  win  5.2% draw 94.8%  ep 44.1s  ent 6.80  kl 0.0072  vloss 0.018  ev 0.73  shaping 0.84  train-aim:9%
+20:55:58 [aim]   0.49 M     3342 st/s  win  9.0% draw 91.0%  ep 43.3s  ent 6.76  kl 0.0068  vloss 0.017  ev 0.91  shaping 0.83  train-aim:14%
+20:56:37 [aim]   0.53 M     2865 st/s  win 17.5% draw 82.5%  ep 41.5s  ent 6.60  kl 0.0062  vloss 0.032  ev 0.80  shaping 0.81  train-aim:24%
+20:56:48 [aim]   0.57 M     2919 st/s  win 29.0% draw 71.0%  ep 39.0s  ent 6.58  kl 0.0075  vloss 0.022  ev 0.91  shaping 0.80  train-aim:44%
+20:56:59 [aim]   0.61 M     2958 st/s  win 40.5% draw 59.5%  ep 36.0s  ent 6.36  kl 0.0066  vloss 0.025  ev 0.89  shaping 0.78  train-aim:48%
+20:57:08 [aim]   0.66 M     3017 st/s  win 54.2% draw 45.8%  ep 32.5s  ent 6.18  kl 0.0073  vloss 0.037  ev 0.88  shaping 0.77  train-aim:61%
+20:57:29 [aim]   0.70 M     2928 st/s  win 67.5% draw 32.5%  ep 28.8s  ent 5.90  kl 0.0067  vloss 0.030  ev 0.87  shaping 0.75  train-aim:77%
+20:57:40 [aim]   0.74 M     2968 st/s  win 85.5% draw 14.5%  ep 23.6s  ent 5.54  kl 0.0087  vloss 0.020  ev 0.87  shaping 0.74  train-aim:94%
+20:57:51 [aim]   0.78 M     2996 st/s  win 97.2% draw  2.8%  ep 18.7s  ent 5.34  kl 0.0070  vloss 0.019  ev 0.87  shaping 0.72  train-aim:98%
+20:58:02 [aim]   0.82 M     3018 st/s  win 99.2% draw  0.8%  ep 16.2s  ent 5.11  kl 0.0069  vloss 0.017  ev 0.92  shaping 0.71  train-aim:100%
+20:58:13 [aim]   0.86 M     3049 st/s  win 98.0% draw  2.0%  ep 15.1s  ent 5.02  kl 0.0076  vloss 0.015  ev 0.92  shaping 0.70  train-aim:98%
+20:58:24 [aim]   0.90 M     3075 st/s  win 99.0% draw  1.0%  ep 14.2s  ent 4.84  kl 0.0069  vloss 0.015  ev 0.91  shaping 0.68  train-aim:100%
+20:58:35 [aim]   0.94 M     3104 st/s  win 98.2% draw  1.8%  ep 13.5s  ent 4.81  kl 0.0063  vloss 0.013  ev 0.96  shaping 0.67  train-aim:98%
+20:58:45 [aim]   0.98 M     3136 st/s  win 98.5% draw  1.5%  ep 13.3s  ent 4.80  kl 0.0075  vloss 0.015  ev 0.91  shaping 0.65  train-aim:100%
+20:58:51 stage aim passed: win rate 99.5% ≥ 90% at 1.01 M steps
+20:58:51 done: checkpoints in /tmp/claude-0/-home-user-iso-knight/1288a417-01f7-579c-9587-111f8d82faba/scratchpad/runs/aim1
