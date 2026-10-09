@@ -62,8 +62,8 @@ class Policy(nn.Module):
             nn.init.orthogonal_(head.weight, 0.01)
         nn.init.orthogonal_(self.value.weight, 1.0)
 
-    def forward(self, obs, h=None):
-        """obs [B, OBS_SIZE] → (list of logits per head, value [B], new hidden or None)."""
+    def encode(self, obs):
+        """obs [B, OBS_SIZE] → state features [B, hidden] before the GRU, contact and cover embeddings for the pointers."""
         B = obs.shape[0]
         s = obs[:, :SELF]
         al = obs[:, ALLIES_AT:CONTACTS_AT].reshape(B, N_ALLY, ALLY)
@@ -75,11 +75,19 @@ class Policy(nn.Module):
         es = self.self_net(s)
         ea, ec, ev = self.ally_net(al), self.contact_net(ct), self.cover_net(cv)
         x = torch.cat([es, masked_pool(ea, m_al), masked_pool(ec, m_ct), masked_pool(ev, m_cv)], -1)
-        x = self.trunk(x)
+        return self.trunk(x), ec, ev
+
+    def forward(self, obs, h=None):
+        """obs [B, OBS_SIZE] → (list of logits per head, value [B], new hidden or None)."""
+        x, ec, ev = self.encode(obs)
         if self.recurrent:
             h = self.gru(x, h if h is not None else torch.zeros_like(x))
             x = h
+        logits, value = self.heads(x, ec, ev)
+        return logits, value, h
 
+    def heads(self, x, ec, ev):
+        """State after the trunk (or the GRU) → (list of logits per head, value [B])."""
         cover_logits = torch.einsum("bd,bnd->bn", self.cover_q(x), ev) / 8.0
         contact_logits = torch.einsum("bd,bnd->bn", self.contact_q(x), ec) / 11.3
         logits = [
@@ -90,7 +98,7 @@ class Policy(nn.Module):
             self.trigger(x),
             self.reload(x),
         ]
-        return logits, self.value(x).squeeze(-1), h
+        return logits, self.value(x).squeeze(-1)
 
 
 def split_masks(masks):

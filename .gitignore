@@ -9,3 +9,5 @@ train/native/
 runs/
 __pycache__/
 game/.godot/
+train/cluster/out/
+train/cluster/cluster.local.json

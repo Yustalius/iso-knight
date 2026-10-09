@@ -1,0 +1,7 @@
+{
+  "name": "eval-duel-kiter", "about": "Evaluation: 1v1 on generated maps against kiter only, balance randomized ±10%.",
+  "learner": 0,
+  "map": { "gen": { "symmetric": true } }, "rules": { "roundTime": 90 }, "randomizeBalance": 0.1,
+  "reward": { "win": 1, "loss": -1, "draw": -0.3, "damageDealt": 0.5, "damageTaken": 0.5, "kill": 0.3, "death": 0.3 },
+  "teams": [ { "size": 1, "brain": "rifleman" }, { "size": 1, "brain": "kiter" } ]
+}

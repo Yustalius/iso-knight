@@ -1,0 +1,17 @@
+{
+  "name": "curriculum-gru",
+  "about": "Branch B of docs/train-t4.md: a GRU network from scratch through the whole curriculum; the duel stage has kiters three times as often and no early promotion. Scenario paths are relative to this file.",
+  "envs": 256, "threads": 0, "seed": 21, "learner": "team0", "mapPool": 512,
+  "logEvery": 5, "saveEvery": 50, "snapshotEvery": 50e6,
+  "ppo": { "rollout": 128, "epochs": 4, "minibatches": 8, "lr": 3e-4, "gamma": 0.995, "lambda": 0.95, "clip": 0.2,
+           "ent": [0.01, 0.002], "vf": 0.5, "maxGradNorm": 0.5, "hidden": 256, "recurrent": true },
+  "stages": [
+    { "name": "aim", "scenarios": ["../../sim/scenarios/train-aim.json"], "steps": 10e6, "promote": 0.9, "shapingAnneal": 0.7 },
+    { "name": "turret", "scenarios": [ { "file": "../../sim/scenarios/train-turret-easy.json", "weight": 1 },
+                                       { "file": "../../sim/scenarios/train-turret.json", "weight": 1 } ],
+      "steps": 30e6, "promote": 0.6, "shapingAnneal": 0.6 },
+    { "name": "duel", "scenarios": [ { "file": "../../sim/scenarios/train-duel.json", "weight": 1 },
+                                     { "file": "../../sim/scenarios/train-duel-gen-kiter.json", "weight": 2 } ],
+      "steps": 150e6, "promote": null, "shapingAnneal": 0.3 }
+  ]
+}

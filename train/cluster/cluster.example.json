@@ -1,0 +1,6 @@
+{
+  "namespace": "<namespace>",
+  "server": "https://<api-server>:6443",
+  "proxy_port": 28082,
+  "image": "<registry>/<project>/gpu-runtime@sha256:<digest>"
+}

@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Squad · обучение на T4</title>
+<link rel="icon" href="data:,">
+<style>
+:root {
+  --bg: #f6f5f1; --panel: #ffffff; --ink: #1d1d1b; --muted: #6b6a64; --line: #e3e1d9; --grid: #eeece6;
+  --ok: #2e7d4f; --warn: #b7791f; --bad: #c0392b; --accent: #2f5fb3; --chip: #efede6;
+  --s1: #2f5fb3; --s2: #c2562b; --s3: #2e8b6e; --s4: #8a4fb8; --s5: #b38a1d; --s6: #4a8db3; --s7: #a33b6b;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #141412; --panel: #1d1d1a; --ink: #ecebe6; --muted: #9c9a92; --line: #33322d; --grid: #2a2925;
+    --ok: #5cbf86; --warn: #e0a843; --bad: #ef6f5e; --accent: #7aa2f0; --chip: #2a2925;
+    --s1: #7aa2f0; --s2: #ef8b5f; --s3: #5cc4a2; --s4: #b98be0; --s5: #e0c05a; --s6: #7cc0e6; --s7: #e07aa8;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 1320px; margin: 0 auto; padding: 16px; }
+header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 14px; }
+h1 { font-size: 20px; margin: 0; font-weight: 650; letter-spacing: -0.01em; }
+h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 22px 0 8px; font-weight: 600; }
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 99px; background: var(--chip); font-size: 12px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.dot.ok { background: var(--ok); } .dot.warn { background: var(--warn); } .dot.bad { background: var(--bad); }
+button, select { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+.spacer { flex: 1; }
+.grid { display: grid; gap: 12px; }
+.g4 { grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); }
+.g2 { grid-template-columns: repeat(auto-fit, minmax(min(380px, 100%), 1fr)); }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; min-width: 0; }
+.k { color: var(--muted); font-size: 12px; }
+.big { font-size: 22px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.num { font-variant-numeric: tabular-nums; }
+.bar { height: 8px; background: var(--grid); border-radius: 4px; overflow: hidden; margin: 6px 0 2px; }
+.bar > i { display: block; height: 100%; background: var(--accent); }
+.bar > i.full { background: var(--warn); }
+.runhead { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.swatch { width: 12px; height: 12px; border-radius: 3px; flex: none; }
+.runname { font-weight: 650; font-size: 15px; }
+.badge { font-size: 11px; padding: 1px 8px; border-radius: 99px; background: var(--chip); }
+.badge.running { background: color-mix(in srgb, var(--ok) 20%, transparent); color: var(--ok); }
+.badge.done { background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--accent); }
+.badge.error, .badge.stale { background: color-mix(in srgb, var(--bad) 18%, transparent); color: var(--bad); }
+.stages { display: flex; gap: 4px; flex-wrap: wrap; margin: 6px 0; }
+.stage { font-size: 11px; padding: 1px 7px; border-radius: 4px; background: var(--chip); color: var(--muted); }
+.stage.cur { background: var(--accent); color: white; }
+.stage.past { color: var(--ink); }
+.kv { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px 10px; margin-top: 8px; }
+.scen { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 6px; font-size: 12px; }
+.controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 10px; }
+.controls label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+.chart { position: relative; }
+.chart svg { width: 100%; height: 210px; display: block; overflow: visible; }
+.chart .title { font-weight: 600; font-size: 13px; margin-bottom: 2px; }
+.chart .hint { color: var(--muted); font-size: 11px; }
+.tip { position: absolute; pointer-events: none; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font-size: 12px; box-shadow: 0 4px 14px rgb(0 0 0 / .12); white-space: nowrap; z-index: 5; display: none; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { color: var(--muted); font-weight: 600; font-size: 12px; }
+td.r, th.r { text-align: right; }
+tr.ours td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.tablewrap { overflow-x: auto; }
+.up { color: var(--ok); } .down { color: var(--bad); }
+pre { margin: 0; font: 12px/1.4 ui-monospace, Consolas, monospace; white-space: pre-wrap; word-break: break-all; max-height: 340px; overflow: auto; background: var(--bg); padding: 8px; border-radius: 6px; }
+.tabs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 8px; }
+.tabs button.on { background: var(--accent); color: white; border-color: var(--accent); }
+.err { color: var(--bad); font-size: 12px; }
+.empty { color: var(--muted); padding: 18px 0; text-align: center; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Squad · обучение на T4</h1>
+    <span class="pill" id="conn"><span class="dot"></span>…</span>
+    <span class="pill" id="podpill" hidden></span>
+    <span class="spacer"></span>
+    <button id="pollnow" title="Опросить кластер сейчас">Обновить</button>
+  </header>
+  <div id="errors" class="err"></div>
+
+  <div class="grid g4" id="quota"></div>
+
+  <h2>Прогоны</h2>
+  <div class="grid g2" id="runs"></div>
+
+  <h2>Графики</h2>
+  <div class="controls">
+    <label>Сглаживание <input type="range" id="smooth" min="0" max="0.98" step="0.02" value="0.6"><span id="smoothv" class="num"></span></label>
+    <label>Ось X <select id="xaxis"><option value="global_steps">шаги всего</option><option value="steps">шаги стадии</option></select></label>
+    <label>Сценарий <select id="scenario"></select></label>
+    <label><input type="checkbox" id="showspeed"> замеры скорости (smoke)</label>
+  </div>
+  <div class="grid g2" id="charts"></div>
+
+  <h2>Оценка на отложенных seed'ах</h2>
+  <div class="card tablewrap" id="evalbox"><div class="empty">Появится после окончания прогона (eval.json)</div></div>
+
+  <h2>Кластер</h2>
+  <div class="card tablewrap" id="jobs"></div>
+
+  <h2>Логи</h2>
+  <div class="card"><div class="tabs" id="logtabs"></div><pre id="logbox"></pre></div>
+</main>
+<div class="tip" id="tip"></div>
+<script>
+const COLORS = ['--s1','--s2','--s3','--s4','--s5','--s6','--s7'].map(v => getComputedStyle(document.documentElement).getPropertyValue(v).trim());
+let S = null, logTab = null;
+const hidden = new Set(JSON.parse(localStorageGet('hidden') || '[]'));
+function localStorageGet(k) { try { return localStorage.getItem('squad-' + k); } catch { return null; } }
+function localStorageSet(k, v) { try { localStorage.setItem('squad-' + k, v); } catch {} }
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const pct = (v, d = 0) => v == null ? '—' : (v * 100).toFixed(d) + ' %';
+const fmtM = v => v == null ? '—' : (v >= 1e9 ? (v / 1e9).toFixed(2) + ' млрд' : (v / 1e6).toFixed(v >= 1e8 ? 0 : 1) + ' млн');
+const fmtK = v => v == null ? '—' : v >= 1000 ? (v / 1000).toFixed(1) + ' тыс' : v.toFixed(0);
+function dur(s) { if (s == null || !isFinite(s)) return '—'; s = Math.max(0, s); const h = Math.floor(s / 3600), m = Math.round((s % 3600) / 60); return h ? `${h} ч ${m} мин` : `${m} мин`; }
+function ago(t) { if (!t) return '—'; const s = (S.now - t); return s < 90 ? `${Math.round(s)} с назад` : dur(s) + ' назад'; }
+const runLabel = d => d.replace('/work/squad/runs/', '').replace(/^\/work\/squad\/smoke\/([^/]+)\/speed\//, 'speed $1/');
+const isSpeed = d => d.includes('/smoke/');
+
+function runList() {
+  const all = Object.keys(S.runs || {}).sort();
+  return all.filter(d => $('showspeed').checked || !isSpeed(d));
+}
+function colorOf(d) { const all = Object.keys(S.runs || {}).sort(); return COLORS[all.indexOf(d) % COLORS.length]; }
+
+function renderHeader() {
+  const c = S.cluster || {}, errs = S.errors || [];
+  const age = S.now - (S.last_poll || 0);
+  const cls = !c.tunnel ? 'bad' : errs.length ? 'warn' : age > 120 ? 'warn' : 'ok';
+  $('conn').innerHTML = `<span class="dot ${cls}"></span>${c.tunnel === false ? 'туннель не слушает' : 'опрос ' + ago(S.last_poll)}`;
+  $('errors').textContent = errs.join(' · ');
+  const p = S.pod;
+  const pp = $('podpill');
+  if (p) {
+    pp.hidden = false;
+    pp.innerHTML = `<span class="dot ok"></span>${esc(p.name)} · CPU ${p.cpu_cores != null ? p.cpu_cores.toFixed(1) : '—'} ядер · load ${esc((p.load || []).join(' '))}`;
+  } else { pp.hidden = false; pp.innerHTML = '<span class="dot"></span>наш под не запущен'; }
+}
+
+function renderQuota() {
+  const q = (S.cluster || {}).quota || {};
+  const parse = v => v == null ? 0 : /m$/.test(v) ? parseFloat(v) / 1000 : /Gi$/.test(v) ? parseFloat(v) : /Mi$/.test(v) ? parseFloat(v) / 1024 : parseFloat(v);
+  const items = [['requests.nvidia.com/gpu', 'GPU', ''], ['requests.cpu', 'CPU requests', ' ядер'], ['limits.cpu', 'CPU limits', ' ядер'], ['requests.memory', 'RAM requests', ' ГиБ']];
+  let html = items.map(([k, name, unit]) => {
+    const [u, h] = q[k] || [null, null]; const used = parse(u), hard = parse(h);
+    const f = hard ? Math.min(1, used / hard) : 0;
+    return `<div class="card"><div class="k">${name}</div><div class="big">${u == null ? '—' : +used.toFixed(1)}<span class="k"> / ${h == null ? '—' : +hard.toFixed(1)}${unit}</span></div><div class="bar"><i class="${f >= 1 ? 'full' : ''}" style="width:${f * 100}%"></i></div></div>`;
+  }).join('');
+  const g = S.pod && Array.isArray(S.pod.gpu) ? S.pod.gpu : null;
+  if (g) html += g.map(r => `<div class="card"><div class="k">GPU ${r[0]} (T4)</div><div class="big">${r[1]}<span class="k"> % · ${(r[2] / 1024).toFixed(1)} / ${(r[3] / 1024).toFixed(0)} ГиБ · ${r[4]}°</span></div><div class="bar"><i style="width:${r[1]}%"></i></div></div>`).join('');
+  $('quota').innerHTML = html;
+}
+
+function renderRuns() {
+  const list = runList().filter(d => !isSpeed(d));
+  if (!list.length) { $('runs').innerHTML = '<div class="card empty">Прогонов пока нет</div>'; return; }
+  $('runs').innerHTML = list.map(d => {
+    const r = S.runs[d], st = r.status || {}, m = (S.metrics[d] || []).slice(-1)[0] || {};
+    const fresh = S.pod && r.seen && S.now - r.seen < 300;
+    let state = st.state || '—';
+    if (state === 'running' && !fresh) state = 'stale';
+    const label = {running: 'идёт', done: 'готово', error: 'ошибка', stale: 'нет связи'}[state] || state;
+    const stages = (st.stages || []).map((s, i) => `<span class="stage ${s === st.stage && state !== 'done' ? 'cur' : (st.stage_index > i || state === 'done') ? 'past' : ''}">${esc(s)}</span>`).join('<span class="k">→</span>');
+    const f = st.budget ? Math.min(1, st.steps / st.budget) : (state === 'done' ? 1 : 0);
+    const scen = Object.entries(st.by_scenario || {}).map(([k, v]) => `<span><span class="k">${esc(k)}</span> <b class="num">${pct(v)}</b></span>`).join('');
+    const vis = !hidden.has(d);
+    return `<div class="card">
+      <div class="runhead"><span class="swatch" style="background:${colorOf(d)}"></span><span class="runname">${esc(runLabel(d))}</span>
+        <span class="badge ${state}">${label}</span>${st.recurrent ? '<span class="badge">GRU</span>' : '<span class="badge">MLP</span>'}
+        <span class="spacer"></span><label class="k"><input type="checkbox" data-run="${esc(d)}" ${vis ? 'checked' : ''}> на графиках</label></div>
+      <div class="stages">${stages}</div>
+      <div class="bar"><i style="width:${f * 100}%"></i></div>
+      <div class="k num">${st.stage ? esc(st.stage) + ': ' : ''}${fmtM(st.steps)} из ${fmtM(st.budget)} · всего ${fmtM(st.global_steps)}</div>
+      <div class="kv">
+        <div><div class="k">победы (окно 400)</div><div class="big">${pct(st.win)}</div></div>
+        <div><div class="k">скорость</div><div class="big">${fmtK(st.sps)}<span class="k"> шаг/с</span></div></div>
+        <div><div class="k">до конца стадии</div><div class="big" style="font-size:17px">${state === 'running' ? dur(st.eta) : '—'}</div></div>
+        <div><div class="k">энтропия</div><div class="num">${m.entropy?.toFixed(2) ?? '—'}</div></div>
+        <div><div class="k">KL · ev</div><div class="num">${m.kl?.toFixed(4) ?? '—'} · ${m.ev?.toFixed(2) ?? '—'}</div></div>
+        <div><div class="k">обновлено</div><div class="num">${ago(st.time)}</div></div>
+      </div>
+      <div class="scen">${scen}</div>
+      ${st.error ? `<div class="err">${esc(st.error)}</div>` : ''}
+      <div class="k" style="margin-top:6px">чекпоинты: ${esc((r.files || []).join(', ') || '—')}</div>
+    </div>`;
+  }).join('');
+  document.querySelectorAll('#runs input[data-run]').forEach(cb => cb.onchange = () => {
+    cb.checked ? hidden.delete(cb.dataset.run) : hidden.add(cb.dataset.run);
+    localStorageSet('hidden', JSON.stringify([...hidden])); renderCharts();
+  });
+}
+
+function ema(pts, a) {
+  if (!a) return pts; let v = null;
+  return pts.map(([x, y]) => { v = v == null ? y : a * v + (1 - a) * y; return [x, v]; });
+}
+
+const CHARTS = [
+  {key: 'win', title: 'Победы, окно 400 эпизодов', fmt: v => pct(v), min: 0, max: 1},
+  {key: 'scenario', title: 'Победы по сценарию', fmt: v => pct(v), min: 0, max: 1},
+  {key: 'sps', title: 'Скорость, шагов/с', fmt: v => fmtK(v), min: 0, raw: true},
+  {key: 'entropy', title: 'Энтропия политики', fmt: v => v.toFixed(2)},
+  {key: 'kl', title: 'KL (> 0,05 — шаги слишком большие)', fmt: v => v.toFixed(4), min: 0},
+  {key: 'ev', title: 'Объяснённая дисперсия ценности', fmt: v => v.toFixed(2), max: 1},
+  {key: 'vloss', title: 'Ошибка ценности', fmt: v => v.toFixed(3), min: 0},
+  {key: 'ep_seconds', title: 'Длина эпизода, с', fmt: v => v.toFixed(1), min: 0},
+  {key: 'draw', title: 'Ничьи', fmt: v => pct(v), min: 0},
+  {key: 'shaping', title: 'Коэффициент подсказок', fmt: v => v.toFixed(2), min: 0, raw: true},
+];
+
+function seriesFor(c) {
+  const xk = $('xaxis').value, a = +$('smooth').value, scen = $('scenario').value;
+  return runList().filter(d => !hidden.has(d)).map(d => {
+    const rows = S.metrics[d] || [];
+    let pts = rows.map(r => [r[xk], c.key === 'scenario' ? (r.by_scenario || {})[scen] : r[c.key]]).filter(p => p[0] != null && p[1] != null && isFinite(p[1]));
+    return {name: runLabel(d), color: colorOf(d), pts: c.raw ? pts : ema(pts, a)};
+  }).filter(s => s.pts.length);
+}
+
+function niceTicks(lo, hi, n = 5) {
+  if (hi <= lo) hi = lo + 1;
+  const step0 = (hi - lo) / n, mag = 10 ** Math.floor(Math.log10(step0)), r = step0 / mag;
+  const step = (r < 1.5 ? 1 : r < 3 ? 2 : r < 7 ? 5 : 10) * mag;
+  const out = []; for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-12; v += step) out.push(+v.toPrecision(12));
+  return out;
+}
+
+function drawChart(el, c) {
+  const series = seriesFor(c);
+  const W = el.clientWidth || 400, H = 210, L = 48, R = 10, T = 8, B = 24;
+  if (!series.length) { el.querySelector('svg').innerHTML = `<text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="currentColor" opacity=".5" font-size="12">нет данных</text>`; return; }
+  let xs = series.flatMap(s => s.pts.map(p => p[0])), ys = series.flatMap(s => s.pts.map(p => p[1]));
+  let x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = c.min ?? Math.min(...ys), y1 = c.max ?? Math.max(...ys);
+  if (c.min == null || c.max == null) { const pad = (Math.max(...ys) - Math.min(...ys)) * 0.08 || 0.1; if (c.min == null) y0 = Math.min(...ys) - pad; if (c.max == null) y1 = Math.max(...ys) + pad; }
+  if (c.max != null) y1 = Math.min(c.max, Math.max(...ys) + (Math.max(...ys) - y0) * 0.08 || c.max); if (c.key === 'win' || c.key === 'scenario') y1 = 1;
+  if (x1 === x0) x1 = x0 + 1;
+  const sx = x => L + (x - x0) / (x1 - x0) * (W - L - R), sy = y => T + (1 - (y - y0) / (y1 - y0)) * (H - T - B);
+  const css = getComputedStyle(document.documentElement);
+  const grid = css.getPropertyValue('--grid'), muted = css.getPropertyValue('--muted');
+  let g = '';
+  for (const t of niceTicks(y0, y1, 4)) g += `<line x1="${L}" x2="${W - R}" y1="${sy(t)}" y2="${sy(t)}" stroke="${grid}"/><text x="${L - 6}" y="${sy(t) + 4}" text-anchor="end" font-size="11" fill="${muted}">${c.fmt(t)}</text>`;
+  for (const t of niceTicks(x0, x1, 5)) g += `<text x="${sx(t)}" y="${H - 6}" text-anchor="middle" font-size="11" fill="${muted}">${fmtM(t)}</text>`;
+  for (const s of series) {
+    const d = s.pts.map((p, i) => (i ? 'L' : 'M') + sx(p[0]).toFixed(1) + ',' + sy(p[1]).toFixed(1)).join('');
+    g += `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="1.8" stroke-linejoin="round"/>`;
+  }
+  g += `<line class="cross" x1="0" x2="0" y1="${T}" y2="${H - B}" stroke="${muted}" stroke-dasharray="3 3" visibility="hidden"/><rect x="${L}" y="${T}" width="${W - L - R}" height="${H - T - B}" fill="transparent"/>`;
+  const svg = el.querySelector('svg');
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.innerHTML = g;
+  const cross = svg.querySelector('.cross'), tip = $('tip');
+  svg.onmousemove = e => {
+    const rect = svg.getBoundingClientRect(), mx = (e.clientX - rect.left) * W / rect.width;
+    const x = x0 + (mx - L) / (W - L - R) * (x1 - x0);
+    if (mx < L || mx > W - R) { cross.setAttribute('visibility', 'hidden'); tip.style.display = 'none'; return; }
+    cross.setAttribute('x1', mx); cross.setAttribute('x2', mx); cross.setAttribute('visibility', 'visible');
+    const rows = series.map(s => { let best = s.pts[0]; for (const p of s.pts) if (Math.abs(p[0] - x) < Math.abs(best[0] - x)) best = p; return `<div><span class="swatch" style="display:inline-block;background:${s.color}"></span> ${esc(s.name)}: <b>${c.fmt(best[1])}</b> <span class="k">@ ${fmtM(best[0])}</span></div>`; });
+    tip.innerHTML = rows.join(''); tip.style.display = 'block';
+    tip.style.left = Math.min(window.innerWidth - tip.offsetWidth - 8, e.clientX + 14) + 'px'; tip.style.top = (e.clientY + window.scrollY + 12) + 'px';
+  };
+  svg.onmouseleave = () => { cross.setAttribute('visibility', 'hidden'); tip.style.display = 'none'; };
+}
+
+function renderCharts() {
+  const box = $('charts');
+  if (!box.children.length) box.innerHTML = CHARTS.map((c, i) => `<div class="card chart" data-i="${i}"><div class="title">${c.title}</div><svg></svg></div>`).join('');
+  const scen = new Set();
+  for (const d of runList()) for (const r of (S.metrics[d] || [])) Object.keys(r.by_scenario || {}).forEach(k => scen.add(k));
+  const sel = $('scenario'), cur = sel.value || localStorageGet('scenario');
+  const opts = [...scen].sort();
+  if (sel.options.length !== opts.length || [...sel.options].some((o, i) => o.value !== opts[i])) {
+    sel.innerHTML = opts.map(s => `<option>${esc(s)}</option>`).join('');
+    if (opts.includes(cur)) sel.value = cur;
+  }
+  box.querySelectorAll('.chart').forEach(el => drawChart(el, CHARTS[+el.dataset.i]));
+  $('smoothv').textContent = (+$('smooth').value).toFixed(2);
+}
+
+function renderEval() {
+  const evals = [];
+  for (const d of Object.keys(S.runs || {}).sort()) {
+    const e = (S.runs[d] || {}).eval; if (!e) continue;
+    for (const [ck, v] of Object.entries(e.checkpoints || {})) {
+      const name = ck.includes('trial-cpu') ? 'trial-cpu (база)' : runLabel(d);
+      if (!evals.some(x => x.name === name)) evals.push({name, color: ck.includes('trial-cpu') ? null : colorOf(d), v});
+    }
+  }
+  if (!evals.length) { $('evalbox').innerHTML = '<div class="empty">Появится после окончания прогона (eval.json)</div>'; return; }
+  const base = evals.find(x => x.name.startsWith('trial'));
+  const scen = [...new Set(evals.flatMap(x => Object.keys(x.v.panel)))];
+  let h = `<table><tr><th>сценарий</th>${evals.map(x => `<th class="r">${x.color ? `<span class="swatch" style="display:inline-block;background:${x.color}"></span> ` : ''}${esc(x.name)}<div class="k">${fmtM(x.v.steps)} шагов</div></th>`).join('')}</tr>`;
+  for (const s of scen) {
+    h += `<tr><td>${esc(s)}</td>` + evals.map(x => {
+      const r = x.v.panel[s]; if (!r) return '<td class="r">—</td>';
+      let delta = '';
+      if (base && x !== base && base.v.panel[s]) {
+        const b = base.v.panel[s], dlt = r.win - b.win, sig = r.ci[0] > b.ci[1] ? 'up' : r.ci[1] < b.ci[0] ? 'down' : '';
+        delta = ` <span class="${sig} k">${dlt >= 0 ? '+' : ''}${(dlt * 100).toFixed(1)}</span>`;
+      }
+      return `<td class="r num"><b>${pct(r.win, 1)}</b> <span class="k">[${pct(r.ci[0])}–${pct(r.ci[1])}]</span>${delta}</td>`;
+    }).join('') + '</tr>';
+  }
+  $('evalbox').innerHTML = h + '</table><div class="k" style="margin-top:6px">Зелёная разница — интервалы не пересекаются с базой. Цели: train-duel-gen ≥ 85 %, kiter ≥ 60 %.</div>';
+}
+
+function renderJobs() {
+  const c = S.cluster || {};
+  const jobs = c.jobs || [], pods = c.pods || [];
+  const active = jobs.filter(j => j.active || j.name.startsWith('squad-'));
+  let h = `<table><tr><th>Job</th><th>чей</th><th>состояние</th><th class="r">active / ok / fail</th><th>создан</th></tr>`;
+  h += active.map(j => `<tr class="${j.ours ? 'ours' : ''}"><td>${esc(j.name)}</td><td>${j.ours ? 'наш' : 'чужой — не трогать'}</td><td>${esc(j.conditions.join(', ') || (j.active ? 'Running' : '—'))}</td><td class="r num">${j.active} / ${j.succeeded} / ${j.failed}</td><td class="num">${esc(j.created.replace('T', ' ').replace('Z', ''))}</td></tr>`).join('');
+  h += `</table><div class="k" style="margin:6px 0 10px">Показаны активные и наши; завершённых чужих ещё ${jobs.length - active.length}.</div>`;
+  const live = pods.filter(p => p.phase !== 'Succeeded' && p.phase !== 'Failed' || p.ours);
+  h += `<table><tr><th>Pod</th><th>фаза</th><th>узел</th><th class="r">GPU</th><th class="r">CPU req</th><th class="r">рестарты</th></tr>`;
+  h += live.map(p => `<tr class="${p.ours ? 'ours' : ''}"><td>${esc(p.name)}</td><td>${esc(p.phase)} ${esc((p.waiting || []).join(' '))}</td><td>${esc(p.node || '')}</td><td class="r">${esc(p.gpu)}</td><td class="r">${esc(p.cpu)}</td><td class="r">${p.restarts}</td></tr>`).join('') || '<tr><td colspan="6" class="k">нет живых подов</td></tr>';
+  $('jobs').innerHTML = h + '</table>';
+}
+
+function renderLogs() {
+  const tabs = [];
+  for (const d of Object.keys(S.runs || {}).sort()) if (!isSpeed(d)) tabs.push({id: d, name: runLabel(d), text: () => [...(S.runs[d].log || []), '', '— job.out —', ...(S.runs[d].out || [])].join('\n')});
+  for (const [d, v] of Object.entries(S.smoke || {})) tabs.push({id: d, name: 'smoke ' + d.split('/').pop(), text: () => (v.log || []).join('\n') + (v.summary ? '\n\n' + JSON.stringify(v.summary, null, 1) : '')});
+  if (!tabs.length) { $('logtabs').innerHTML = ''; $('logbox').textContent = 'логов пока нет'; return; }
+  if (!tabs.some(t => t.id === logTab)) logTab = tabs[0].id;
+  $('logtabs').innerHTML = tabs.map(t => `<button class="${t.id === logTab ? 'on' : ''}" data-id="${esc(t.id)}">${esc(t.name)}</button>`).join('');
+  $('logtabs').querySelectorAll('button').forEach(b => b.onclick = () => { logTab = b.dataset.id; renderLogs(); });
+  const box = $('logbox'), atEnd = box.scrollTop + box.clientHeight >= box.scrollHeight - 20;
+  box.textContent = tabs.find(t => t.id === logTab).text();
+  if (atEnd) box.scrollTop = box.scrollHeight;
+}
+
+async function refresh() {
+  try {
+    S = await (await fetch('/api/state')).json();
+    renderHeader(); renderQuota(); renderRuns(); renderCharts(); renderEval(); renderJobs(); renderLogs();
+  } catch (e) { $('errors').textContent = 'панель не отвечает: ' + e; }
+}
+$('pollnow').onclick = async () => { await fetch('/api/poll'); setTimeout(refresh, 4000); };
+['smooth', 'xaxis', 'showspeed'].forEach(id => $(id).oninput = () => { renderRuns(); renderCharts(); });
+$('scenario').onchange = () => { localStorageSet('scenario', $('scenario').value); renderCharts(); };
+window.addEventListener('resize', () => S && renderCharts());
+refresh(); setInterval(refresh, 10000);
+</script>
+</body>
+</html>

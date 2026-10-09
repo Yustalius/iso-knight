@@ -1,0 +1,7 @@
+{
+  "name": "train-duel-gen-kiter", "about": "Stage 3b with kiters three times as often: 1v1 on generated maps, balance randomized ±10%.",
+  "learner": 0,
+  "map": { "gen": { "symmetric": true } }, "rules": { "roundTime": 90 }, "randomizeBalance": 0.1,
+  "reward": { "win": 1, "loss": -1, "draw": -0.3, "damageDealt": 0.5, "damageTaken": 0.5, "kill": 0.3, "death": 0.3 },
+  "teams": [ { "size": 1, "brain": "rifleman" }, { "size": 1, "mix": { "rifleman": 1, "holder": 1, "hunter": 1, "kiter": 3, "marksman": 1, "flanker": 1 } } ]
+}
