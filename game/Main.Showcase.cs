@@ -12,7 +12,7 @@ public partial class Main
     SoldierTruth[] _showPrev = new SoldierTruth[2], _showCur = new SoldierTruth[2];
 
     static readonly Vec2 EnemyAt = new(-0.6, -2.4);
-    double KillT => _show == "kill" ? 1.1 : 1e9;
+    double KillT => _show is "kill" or "yard" or "crouchkill" or "aimkill" ? 1.1 : 1e9;
 
     void StartShowcase()
     {
@@ -56,7 +56,7 @@ public partial class Main
         for (int i = 0; i < 2; i++) { _showPrev[i] = _showCur[i]; _showCur[i] = ShowTruth(i, _showT); }
         float dt = (float)(delta * _speed);
         // shots in the scripted fire and kill scenes: one every 0.25 s once the rifle is up; the third one kills in "kill"
-        bool shot = _show is "fire" or "kill" && _showT > 0.6 && _showT - dt <= KillT && Math.Floor((_showT - 0.6) / 0.25) > Math.Floor((_showT - dt - 0.6) / 0.25);
+        bool shot = _show is "fire" or "kill" or "yard" or "crouchkill" or "aimkill" && _showT > 0.6 && _showT - dt <= KillT && Math.Floor((_showT - 0.6) / 0.25) > Math.Floor((_showT - dt - 0.6) / 0.25);
         if (shot) _soldiers[0].Shot = true;
         if (_show is "reload" or "tactical") _soldiers[0].ReloadEmpty = _show == "reload";
         if (_follow >= 0) _target = new Vector3((float)_showCur[_follow].Pos.X, 0.9f, (float)_showCur[_follow].Pos.Y);
@@ -101,7 +101,13 @@ public partial class Main
         if (who == 1)
         {
             s.Pos = EnemyAt; s.Yaw = s.AimYaw = (Vec2.Zero - EnemyAt).Yaw;
-            s.Alive = !(_show == "kill" && t >= KillT);
+            s.Alive = t < KillT;
+            if (_show is "crouchkill" or "aimkill")
+            {
+                // the victim is aiming back (and crouched): the poses soldiers really die in
+                s.Aiming = true; s.Raise = Math.Clamp(t / 0.3, 0, 1); s.Crouch = _show == "crouchkill" ? 1 : 0;
+                s.AimPitch = Math.Atan2(1.3 - (s.Crouch > 0.5 ? 0.9 : 1.45), EnemyAt.Length);
+            }
             return s;
         }
         s.Yaw = s.AimYaw = 200 * deg;
@@ -135,7 +141,7 @@ public partial class Main
                 if (t >= 0.5 && t < 0.5 + dur) { s.Reloading = true; s.ReloadT = t - 0.5; s.Mag = s.ReloadT < 0.17 ? 30 : 0; }
                 break;
             }
-            case "fire": case "kill": AimAtEnemy(0.2); break;
+            case "fire": case "kill": case "yard": case "crouchkill": case "aimkill": AimAtEnemy(0.2); break;
             case "turn":
             {
                 // aim sweeps left and right of the enemy: the rifle leads, the legs follow

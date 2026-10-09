@@ -36,6 +36,9 @@ sealed class Ragdoll
     readonly Pt[] _all;
     readonly Dictionary<string, int> _i = new();
     readonly List<Con> _c = new();
+    Con[] _cs = Array.Empty<Con>();               // this body's limits (relaxed where its death pose already breaks them)
+    readonly bool[] _hingeOn = { true, true, true, true };
+    readonly float[] _tiltLo = { -0.38f, -0.55f }, _tiltHi = { 0.95f, 0.8f };
     readonly List<Tone> _tone = new();
     readonly (int a, int b, float L)[] _rc;
     readonly Quaternion _pelvisRest, _chestRest, _rifleRest;
@@ -43,9 +46,11 @@ sealed class Ragdoll
     readonly int _hips, _spine, _chest, _neck, _head, _rifle, _mag;
     readonly int[] _upper = new int[2], _fore = new int[2], _hand = new int[2], _thigh = new int[2], _shin = new int[2], _foot = new int[2];
     readonly Collider[] _walls;
+    Collider[] _near = Array.Empty<Collider>();
     Transform3D _root, _rootInv; Quaternion _rootQi;
     float _hPrev = 1 / 240f, _t;
     public float Sleep, ImpactSpeed;
+    const float Settle = 4;   // seconds after death: the body is still from then on
     public bool Active;
 
     Pt At(string n) => _p[_i[n]];
@@ -153,12 +158,38 @@ sealed class Ragdoll
         for (int a = 0; a < up.Length; a++) for (int b = a + 1; b < up.Length; b++) _tone.Add(new Tone { A = _i[up[a]], B = _i[up[b]] });
         foreach (var (a, b) in leg) _tone.Add(new Tone { A = _i[a], B = _i[b], Leg = true });
         for (int k = 0; k < _tone.Count; k++) { var t = _tone[k]; t.L = _p[t.A].P.DistanceTo(_p[t.B].P); _tone[k] = t; }
+        // A body that starts out breaking its own joint limits fights them for ever: the solver pushes the joints apart,
+        // verlet turns every push into speed, and the corpse never comes to rest (it ended up spinning in a knot).
+        // Soldiers die aiming, crouched and mid-stride, poses the concept's standing target never had, so every limit
+        // the death pose already breaks is widened to the pose, and a knee or elbow bent the "wrong" way keeps its hinge off.
+        _cs = _c.ToArray();
+        for (int k = 0; k < _cs.Length; k++)
+        {
+            ref var c = ref _cs[k];
+            float L = _p[c.A].P.DistanceTo(_p[c.B].P);
+            if (c.Min == c.Max) continue;                      // bones stay rigid: the rig keeps their lengths
+            if (L < c.Min) c.Min = L * 0.98f;
+            if (L > c.Max) c.Max = L * 1.02f;
+        }
+        Axes(At("hipL").P, At("hipR").P, At("spine").P, (At("hipL").P + At("hipR").P) * 0.5f, out var px0, out _, out var pz0);
+        Axes(At("shL").P, At("shR").P, At("neck").P, At("spine").P, out var cx0, out _, out var cz0);
+        _hingeOn[0] = HingeSide("hipL", "knL", "anL", px0, 1) >= 0; _hingeOn[1] = HingeSide("hipR", "knR", "anR", px0, 1) >= 0;
+        _hingeOn[2] = HingeSide("shL", "elL", "haL", cx0, -1) >= 0; _hingeOn[3] = HingeSide("shR", "elR", "haR", cx0, -1) >= 0;
+        WidenTilt(0, "spine", "neck", pz0); WidenTilt(1, "neck", "head", cz0);
         foreach (var im in impulses) Kick(im.Point, im.Dir, im.Speed, im.Spread);
         // the rifle leaves the hands with the hands' velocity
         var rifleW = root * _pose.World(_rifle);
         var hv = (At("haR").P - At("haR").Q) / _hPrev;
         foreach (var r in _rp) { r.P = rifleW * r.Off; r.Q = r.P - hv * _hPrev * 0.8f; }
-        Active = true; _t = 0; Sleep = 0;
+        // only the obstacles the body can reach
+        var c0 = At("spine").P;
+        _near = _walls.Where(w =>
+        {
+            var p = new Vector2(c0.X, c0.Z); var a = new Vector2(w.Ax, w.Az); var b = new Vector2(w.Bx, w.Bz);
+            var ab = b - a; float t = ab.LengthSquared() > 0 ? Math.Clamp((p - a).Dot(ab) / ab.LengthSquared(), 0, 1) : 0;
+            return (a + ab * t).DistanceTo(p) < w.R + 2.5f;
+        }).ToArray();
+        Active = true; _t = 0; Sleep = 0; _eAllowed = float.MaxValue;
     }
 
     /// <summary>A velocity change at a world point: the nearest particles take most of it.</summary>
@@ -193,14 +224,28 @@ sealed class Ragdoll
         foreach (var n in counter) At(n).P -= dir * kb;
     }
     // keep the middle joint of a limb on one side of its root–tip line (knees forward, elbows back)
-    void Hinge(string r, string m, string t, Vector3 axis, float sign)
+    float HingeSide(string r, string m, string t, Vector3 axis, float sign)
     {
         Vector3 R = At(r).P, M = At(m).P, T = At(t).P;
-        var a = T - R; float aL = a.LengthSquared(); if (aL < 1e-6f) return;
-        var bend = a.Cross(axis); if (bend.LengthSquared() < 1e-8f) return; bend = bend.Normalized();
+        var a = T - R; float aL = a.LengthSquared(); if (aL < 1e-6f) return 0;
+        var bend = a.Cross(axis); if (bend.LengthSquared() < 1e-8f) return 0; bend = bend.Normalized();
         var off = M - R; off -= a * (off.Dot(a) / aL);
-        float c = off.Dot(bend) * sign;
-        if (c < 0) Push(new[] { m }, new[] { r, t }, bend, -sign * c * 0.35f);
+        return off.Dot(bend) * sign;
+    }
+    void Hinge(int k, string r, string m, string t, Vector3 axis, float sign)
+    {
+        if (!_hingeOn[k]) return;
+        float c = HingeSide(r, m, t, axis, sign);
+        if (c >= 0) return;
+        Vector3 R = At(r).P, T = At(t).P;
+        var bend = (T - R).Cross(axis).Normalized();
+        Push(new[] { m }, new[] { r, t }, bend, -sign * c * 0.35f);
+    }
+    void WidenTilt(int k, string b, string tip, Vector3 fwd)
+    {
+        var u = At(tip).P - At(b).P; float L = u.Length(); if (L < 1e-6f) return;
+        float d = u.Dot(fwd) / L;
+        _tiltLo[k] = MathF.Min(_tiltLo[k], d - 0.02f); _tiltHi[k] = MathF.Max(_tiltHi[k], d + 0.02f);
     }
     // bend limits between two frames: push the tip along fwd until its tilt is back inside [lo, hi]
     void Tilt(string b, string tip, Vector3 fwd, float lo, float hi, string[] movers, string[] counter)
@@ -214,25 +259,35 @@ sealed class Ragdoll
         x = (xa - xb).Normalized(); y = ya - yb; y = (y - x * y.Dot(x)).Normalized(); z = x.Cross(y);
     }
 
-    // ground every iteration (inelastic: pushing out never launches); obstacles once per substep
-    void Collide(Pt x, float h, bool walls)
+    // Ground and obstacles, every iteration, both inelastic: a particle pushed out keeps its velocity along the surface and
+    // loses only the part going in. (Moving the position alone, as the concept did for its few low walls, turns every
+    // push into speed in a verlet integrator: a body lying against a house wall shook itself to pieces and never slept.)
+    // An obstacle's top is a floor for a particle that came from above it.
+    void Collide(Pt x, float h)
     {
         float floor = x.R;
+        foreach (var c in _near)
+        {
+            float abx = c.Bx - c.Ax, abz = c.Bz - c.Az, L2 = abx * abx + abz * abz;
+            float t = L2 > 0 ? Math.Clamp(((x.P.X - c.Ax) * abx + (x.P.Z - c.Az) * abz) / L2, 0, 1) : 0;
+            float qx = c.Ax + abx * t, qz = c.Az + abz * t, dx = x.P.X - qx, dz = x.P.Z - qz, d = MathF.Sqrt(dx * dx + dz * dz);
+            float r = c.R + x.R * 0.6f;
+            if (d >= r) continue;
+            if (x.Q.Y >= c.H + x.R * 0.5f || x.P.Y > c.H) { floor = MathF.Max(floor, c.H + x.R); continue; }   // on top
+            // out through the nearest side, sideways only
+            float nx = d > 1e-5f ? dx / d : 1, nz = d > 1e-5f ? dz / d : 0, push = r - d;
+            x.P.X += nx * push; x.P.Z += nz * push;
+            x.Q.X += nx * push; x.Q.Z += nz * push;
+            float vn = (x.P.X - x.Q.X) * nx + (x.P.Z - x.Q.Z) * nz;
+            if (vn < 0) { x.Q.X += nx * vn; x.Q.Z += nz * vn; }
+            x.Contact = true;
+        }
         if (x.P.Y < floor)
         {
             float vy = (x.P.Y - x.Q.Y) / h;
             if (-vy > ImpactSpeed) ImpactSpeed = -vy;   // for the thud of a body hitting the ground
             x.Cn = MathF.Max(x.Cn, -vy); x.Contact = true;
             x.P.Y = floor; if (x.Q.Y < floor) x.Q.Y = floor;
-        }
-        if (!walls) return;
-        foreach (var c in _walls)
-        {
-            if (x.P.Y > c.H) continue;
-            float abx = c.Bx - c.Ax, abz = c.Bz - c.Az, L2 = abx * abx + abz * abz;
-            float t = L2 > 0 ? Math.Clamp(((x.P.X - c.Ax) * abx + (x.P.Z - c.Az) * abz) / L2, 0, 1) : 0;
-            float qx = c.Ax + abx * t, qz = c.Az + abz * t, dx = x.P.X - qx, dz = x.P.Z - qz, d = MathF.Sqrt(dx * dx + dz * dz), r = c.R + x.R * 0.6f;
-            if (d < r && d > 1e-5f) { x.P.X = qx + dx / d * r; x.P.Z = qz + dz / d * r; x.Contact = true; }
         }
     }
     // Coulomb friction: sliding slows by μ·(weight + the impact the contact absorbed), never reverses
@@ -245,6 +300,24 @@ sealed class Ragdoll
         x.Contact = false; x.Cn = 0;
     }
 
+    // Energy governor: once the bullet's push is in, a corpse's kinetic + potential energy can only fall (gravity trades
+    // one for the other, the ground and friction take it away). A constraint fight that creates energy is cut back by
+    // scaling the velocities, so a body can never wind itself up, spin or explode.
+    float _eAllowed = float.MaxValue;
+    void GovernEnergy(float h)
+    {
+        float ke = 0, pe = 0;
+        foreach (var x in _p) { float m = 1 / x.W; ke += 0.5f * m * (x.P - x.Q).LengthSquared() / (h * h); pe += m * G * x.P.Y; }
+        float e = ke + pe;
+        if (e > _eAllowed && ke > 1e-6f)
+        {
+            float k = MathF.Sqrt(MathF.Max(0, ke - (e - _eAllowed)) / ke);
+            foreach (var x in _p) x.Q = x.P - (x.P - x.Q) * k;
+            e = pe + ke * k * k;
+        }
+        _eAllowed = MathF.Min(_eAllowed, e);
+    }
+
     static readonly string[] NeckSh = { "neck", "shL", "shR" }, Hips2 = { "hipL", "hipR" }, HeadOnly = { "head" }, Sh2 = { "shL", "shR" };
 
     public void Step(float dt)
@@ -254,13 +327,17 @@ sealed class Ragdoll
         float h = MathF.Min(dt, 1 / 30f) / Sub;
         // muscle tone: the upper body keeps its shape for a moment, the legs give out almost at once
         float toneUp = 0.5f * MathF.Exp(-_t / 0.3f), toneLeg = 0.25f * MathF.Exp(-_t / 0.1f);
+        // a dead body comes to rest: from 2.5 s on its motion is damped harder and harder, after 6 s it is still
+        if (_t > Settle) { Active = false; return; }
+        // a dead body comes to rest: the fall is free for 1.5 s, then the motion is damped harder and harder
+        float damp = _t < 1.5f ? 0.998f : MathF.Max(0.85f, 0.998f - (_t - 1.5f) * 0.06f);
         float moving = 0;
         for (int s = 0; s < Sub; s++)
         {
             float scale = h / _hPrev;
             foreach (var x in _all)
             {
-                var v = (x.P - x.Q) * (scale * 0.998f);
+                var v = (x.P - x.Q) * (scale * damp);
                 x.Q = x.P; x.P += v; x.P.Y -= G * h * h;
                 moving = MathF.Max(moving, v.LengthSquared());
             }
@@ -268,20 +345,23 @@ sealed class Ragdoll
             for (int it = 0; it < Iter; it++)
             {
                 if (toneUp > 0.003f) foreach (var t in _tone) SolveDistance(t.A, t.B, 0, 0, t.Leg ? toneLeg : toneUp, t.L);
-                foreach (var c in _c) SolveDistance(c.A, c.B, c.Min, c.Max);
-                Axes(At("hipL").P, At("hipR").P, At("spine").P, (At("hipL").P + At("hipR").P) * 0.5f, out var px, out _, out var pz);
-                Axes(At("shL").P, At("shR").P, At("neck").P, At("spine").P, out var cx, out _, out var cz);
-                Hinge("hipL", "knL", "anL", px, 1); Hinge("hipR", "knR", "anR", px, 1);
-                Hinge("shL", "elL", "haL", cx, -1); Hinge("shR", "elR", "haR", cx, -1);
-                Tilt("spine", "neck", pz, -0.38f, 0.95f, NeckSh, Hips2);   // no breaking backwards
-                Tilt("neck", "head", cz, -0.55f, 0.8f, HeadOnly, Sh2);
+                foreach (var c in _cs) SolveDistance(c.A, c.B, c.Min, c.Max);
+                if (it == Iter - 1)
+                {
+                    // joint-limit projections once per substep: repeated every iteration they over-correct and fight
+                    Axes(At("hipL").P, At("hipR").P, At("spine").P, (At("hipL").P + At("hipR").P) * 0.5f, out var px, out _, out var pz);
+                    Axes(At("shL").P, At("shR").P, At("neck").P, At("spine").P, out var cx, out _, out var cz);
+                    Hinge(0, "hipL", "knL", "anL", px, 1); Hinge(1, "hipR", "knR", "anR", px, 1);
+                    Hinge(2, "shL", "elL", "haL", cx, -1); Hinge(3, "shR", "elR", "haR", cx, -1);
+                    Tilt("spine", "neck", pz, _tiltLo[0], _tiltHi[0], NeckSh, Hips2);   // no breaking backwards
+                    Tilt("neck", "head", cz, _tiltLo[1], _tiltHi[1], HeadOnly, Sh2);
+                }
                 foreach (var (a, b, L) in _rc)
                 {
                     var A = _rp[a]; var B = _rp[b]; var d = B.P - A.P; float l = d.Length(); if (l < 1e-6f) continue;
                     var k = d * ((l - L) / (2 * l)); A.P += k; B.P -= k;
                 }
-                bool last = it == Iter - 1;
-                foreach (var x in _all) Collide(x, h, last);
+                foreach (var x in _all) Collide(x, h);
             }
             // no joint may move faster than a body can (guards against constraint fights)
             float vmax = 9 * h;
@@ -291,6 +371,7 @@ sealed class Ragdoll
                 var d = x.P - x.Q; float l = d.Length();
                 if (l > vmax) x.Q += d * (1 - vmax / l);
             }
+            GovernEnergy(h);
         }
         Sleep = moving < (0.03f * h) * (0.03f * h) ? Sleep + dt : 0;
         PoseBones();

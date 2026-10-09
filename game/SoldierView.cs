@@ -95,10 +95,10 @@ sealed class SoldierView
         float yawRate = dt > 0 ? WrapA(Yaw - _prevYaw) / dt : 0;
         _prevYaw = Yaw;
 
+        // a body stays where it fell: the ragdoll is posed in the frame the soldier died in
+        if (!b.Alive) { UpdateDead(dt, cam); return; }
         Root.Position = new Vector3((float)pos.X, 0, (float)pos.Y);
         Root.Rotation = new Vector3(0, Yaw, 0);
-
-        if (!b.Alive) { UpdateDead(dt, cam); return; }
 
         // velocity of the drawn body: between two ticks it moves at exactly the newer tick's velocity
         var vel = new Vector3((float)b.Vel.X, 0, (float)b.Vel.Y);
