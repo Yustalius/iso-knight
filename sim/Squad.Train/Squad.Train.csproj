@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Training environment: many matches stepped in batches, observations as flat floats.
+       Published with Native AOT as libsquad.so for Python (ctypes); see train/build_native.sh. -->
+  <PropertyGroup>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AssemblyName>squad</AssemblyName>
+    <RootNamespace>Squad.Train</RootNamespace>
+    <IsAotCompatible>true</IsAotCompatible>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Squad.Sim\Squad.Sim.csproj" />
+    <ProjectReference Include="..\Squad.Bots\Squad.Bots.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- scenario and balance JSON are applied to public fields by reflection: keep all metadata -->
+    <TrimmerRootAssembly Include="Squad.Sim" />
+    <TrimmerRootAssembly Include="Squad.Bots" />
+    <TrimmerRootAssembly Include="squad" />
+    <InternalsVisibleTo Include="Squad.Tests" />
+  </ItemGroup>
+</Project>

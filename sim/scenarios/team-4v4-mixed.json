@@ -1,0 +1,8 @@
+{
+  "name": "team-4v4-mixed", "about": "Mixed squads with the squad tactic.",
+  "map": { "gen": { "symmetric": true } }, "rules": { "roundTime": 150 },
+  "teams": [
+    { "size": 4, "mix": { "rifleman": 2, "flanker": 1, "holder": 1 } },
+    { "size": 4, "mix": { "rifleman": 2, "rusher": 1, "marksman": 1 } }
+  ]
+}

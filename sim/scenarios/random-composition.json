@@ -1,0 +1,9 @@
+{
+  "name": "random-composition", "about": "Both team sizes drawn from 1..10 every match, strategies drawn by weight.",
+  "map": { "gen": { "symmetric": true } }, "rules": { "roundTime": 200 },
+  "randomSizes": [1, 10],
+  "teams": [
+    { "mix": { "rifleman": 4, "flanker": 2, "holder": 2, "marksman": 1, "hunter": 1, "rusher": 1, "kiter": 1 } },
+    { "mix": { "rifleman": 4, "flanker": 2, "holder": 2, "marksman": 1, "hunter": 1, "rusher": 1, "kiter": 1 } }
+  ]
+}

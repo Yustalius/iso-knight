@@ -1,0 +1,17 @@
+{
+  "name": "curriculum-1v1",
+  "about": "Stages of docs/bots.md 5.5 for one soldier: targets → a stationary gun → 1v1 against rule bots. Scenario paths are relative to this file.",
+  "envs": 128, "threads": 0, "seed": 1, "learner": "team0", "mapPool": 256,
+  "logEvery": 5, "saveEvery": 50,
+  "ppo": { "rollout": 128, "epochs": 4, "minibatches": 8, "lr": 3e-4, "gamma": 0.995, "lambda": 0.95, "clip": 0.2,
+           "ent": [0.01, 0.002], "vf": 0.5, "maxGradNorm": 0.5, "hidden": 256, "recurrent": false },
+  "stages": [
+    { "name": "aim", "scenarios": ["../../sim/scenarios/train-aim.json"], "steps": 5e6, "promote": 0.9, "shapingAnneal": 0.7 },
+    { "name": "turret", "scenarios": [ { "file": "../../sim/scenarios/train-turret-easy.json", "weight": 1 },
+                                       { "file": "../../sim/scenarios/train-turret.json", "weight": 1 } ],
+      "steps": 30e6, "promote": 0.6, "shapingAnneal": 0.6 },
+    { "name": "duel", "scenarios": [ { "file": "../../sim/scenarios/train-duel.json", "weight": 1 },
+                                     { "file": "../../sim/scenarios/train-duel-gen.json", "weight": 2 } ],
+      "steps": 150e6, "promote": 0.75, "shapingAnneal": 0.5 }
+  ]
+}

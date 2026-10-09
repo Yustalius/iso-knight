@@ -1,0 +1,7 @@
+{
+  "name": "hide-seek", "about": "One hider in heavy foliage, two hunters searching by last known positions and noise.",
+  "learner": 0,
+  "map": { "gen": { "symmetric": false, "foliage": 3, "buildings": 0.6 } },
+  "rules": { "roundTime": 60, "timeoutWinner": 0 },
+  "teams": [ { "size": 1, "brain": "holder", "params": { "holder": { "postDepth": 0.6 } } }, { "size": 2, "brain": "hunter" } ]
+}

@@ -1,0 +1,10 @@
+{
+  "name": "flank-forward-defenders", "about": "Defenders that only ever look forward (awareness 0): flanking pays. Timeout goes to the defenders.",
+  "learner": 0,
+  "map": { "gen": { "symmetric": true } },
+  "rules": { "roundTime": 120, "timeoutWinner": 1 },
+  "teams": [
+    { "size": 3, "mix": { "flanker": 2, "rifleman": 1 } },
+    { "size": 3, "brain": "holder", "params": { "holder": { "awareness": 0, "postDepth": 0.3 } } }
+  ]
+}

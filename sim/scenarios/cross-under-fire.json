@@ -1,0 +1,7 @@
+{
+  "name": "cross-under-fire", "about": "Reach the goal while a turret shoots at everything it sees: moving from cover to cover.",
+  "learner": 0,
+  "map": { "file": "../maps/crossing.json" },
+  "rules": { "roundTime": 45, "reachZone": "goal", "reachTeam": 0, "timeoutWinner": 1 },
+  "teams": [ { "size": 1, "brain": "rifleman" }, { "size": 1, "brain": "turret", "skill": "easy" } ]
+}

@@ -1,0 +1,6 @@
+{
+  "name": "survive-15s", "about": "Stay alive 15 s against two riflemen: hiding and crouching.",
+  "learner": 0,
+  "map": { "file": "../maps/duel.json" }, "rules": { "roundTime": 15, "timeoutWinner": 0 },
+  "teams": [ { "size": 1, "brain": "holder" }, { "size": 2, "brain": "rifleman" } ]
+}

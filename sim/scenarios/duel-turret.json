@@ -1,0 +1,6 @@
+{
+  "name": "duel-turret", "about": "1v1 against a stationary gun that shoots what it sees.",
+  "learner": 0,
+  "map": { "file": "../maps/duel.json" }, "rules": { "roundTime": 60 },
+  "teams": [ { "size": 1, "brain": "rifleman" }, { "size": 1, "brain": "turret" } ]
+}

@@ -1,0 +1,6 @@
+{
+  "name": "aim-dummies", "about": "Shooting at targets that walk a short beat and never shoot back. Team 0 is the learner slot.",
+  "learner": 0,
+  "map": { "file": "../maps/range.json" }, "rules": { "roundTime": 60 }, "tactics": false,
+  "teams": [ { "size": 1, "brain": "rifleman" }, { "size": 3, "brain": "dummy" } ]
+}

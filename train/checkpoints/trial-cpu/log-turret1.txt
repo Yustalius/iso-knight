@@ -1,0 +1,37 @@
+20:59:34 policy: 0.34 M parameters, device cpu, recurrent False
+20:59:34 === stage turret: ['train-turret-easy', 'train-turret'], 64 matches × 1 learner slots, budget 5.0 M steps
+20:59:44 [turret]   0.04 M     4225 st/s  win 42.2% draw  0.0%  ep  7.8s  ent 4.44  kl 0.0101  vloss 0.122  ev 0.29  shaping 0.99  train-turret-easy:56% train-turret:30%
+20:59:53 [turret]   0.08 M     4293 st/s  win 40.8% draw  0.2%  ep  9.0s  ent 4.50  kl 0.0084  vloss 0.133  ev 0.26  shaping 0.98  train-turret-easy:52% train-turret:29%
+21:00:03 [turret]   0.12 M     4205 st/s  win 41.5% draw  0.0%  ep  9.7s  ent 4.78  kl 0.0103  vloss 0.108  ev 0.29  shaping 0.96  train-turret-easy:58% train-turret:24%
+21:00:13 [turret]   0.16 M     4215 st/s  win 47.0% draw  0.2%  ep 11.0s  ent 4.84  kl 0.0071  vloss 0.095  ev 0.35  shaping 0.95  train-turret-easy:62% train-turret:32%
+21:00:23 [turret]   0.20 M     4185 st/s  win 51.0% draw  0.0%  ep 12.0s  ent 5.05  kl 0.0119  vloss 0.089  ev 0.26  shaping 0.93  train-turret-easy:64% train-turret:38%
+21:00:33 [turret]   0.25 M     4168 st/s  win 52.5% draw  0.0%  ep 13.9s  ent 5.15  kl 0.0081  vloss 0.077  ev 0.15  shaping 0.92  train-turret-easy:68% train-turret:36%
+21:00:42 [turret]   0.29 M     4196 st/s  win 49.2% draw  0.2%  ep 14.8s  ent 5.30  kl 0.0071  vloss 0.065  ev 0.35  shaping 0.91  train-turret-easy:66% train-turret:32%
+21:00:51 [turret]   0.33 M     4244 st/s  win 50.2% draw  0.8%  ep 16.8s  ent 5.21  kl 0.0060  vloss 0.071  ev 0.38  shaping 0.89  train-turret-easy:73% train-turret:32%
+21:01:01 [turret]   0.37 M     4228 st/s  win 46.8% draw  0.8%  ep 16.6s  ent 5.51  kl 0.0070  vloss 0.053  ev 0.32  shaping 0.88  train-turret-easy:66% train-turret:28%
+21:01:10 [turret]   0.41 M     4258 st/s  win 47.0% draw  2.0%  ep 19.9s  ent 5.66  kl 0.0066  vloss 0.031  ev 0.49  shaping 0.87  train-turret-easy:60% train-turret:32%
+21:01:19 [turret]   0.45 M     4299 st/s  win 47.5% draw  4.5%  ep 25.6s  ent 5.72  kl 0.0065  vloss 0.026  ev 0.34  shaping 0.85  train-turret-easy:57% train-turret:35%
+21:01:27 [turret]   0.49 M     4329 st/s  win 47.0% draw  6.2%  ep 29.4s  ent 5.47  kl 0.0067  vloss 0.054  ev 0.30  shaping 0.84  train-turret-easy:56% train-turret:38%
+21:01:36 [turret]   0.53 M     4346 st/s  win 44.8% draw  3.2%  ep 24.6s  ent 5.63  kl 0.0066  vloss 0.044  ev 0.26  shaping 0.83  train-turret-easy:57% train-turret:32%
+21:01:45 [turret]   0.57 M     4355 st/s  win 44.2% draw  5.2%  ep 25.3s  ent 5.85  kl 0.0061  vloss 0.010  ev 0.48  shaping 0.81  train-turret-easy:56% train-turret:31%
+21:01:55 [turret]   0.61 M     4365 st/s  win 40.0% draw 12.2%  ep 29.1s  ent 5.75  kl 0.0055  vloss 0.020  ev 0.30  shaping 0.80  train-turret-easy:52% train-turret:30%
+21:02:05 [turret]   0.66 M     4348 st/s  win 39.2% draw 15.5%  ep 32.6s  ent 5.77  kl 0.0046  vloss 0.019  ev 0.32  shaping 0.78  train-turret-easy:50% train-turret:30%
+21:02:14 [turret]   0.70 M     4352 st/s  win 41.8% draw 14.2%  ep 32.2s  ent 5.62  kl 0.0072  vloss 0.037  ev 0.36  shaping 0.77  train-turret-easy:55% train-turret:32%
+21:02:23 [turret]   0.74 M     4357 st/s  win 48.2% draw  4.5%  ep 26.7s  ent 5.68  kl 0.0049  vloss 0.034  ev 0.35  shaping 0.76  train-turret-easy:66% train-turret:32%
+21:02:33 [turret]   0.78 M     4339 st/s  win 47.2% draw  3.2%  ep 25.0s  ent 5.62  kl 0.0054  vloss 0.045  ev 0.31  shaping 0.74  train-turret-easy:64% train-turret:31%
+21:02:42 [turret]   0.82 M     4345 st/s  win 45.2% draw  3.2%  ep 24.9s  ent 5.75  kl 0.0056  vloss 0.026  ev 0.48  shaping 0.73  train-turret-easy:65% train-turret:27%
+21:02:52 [turret]   0.86 M     4335 st/s  win 48.0% draw  4.2%  ep 26.4s  ent 5.47  kl 0.0062  vloss 0.047  ev 0.44  shaping 0.72  train-turret-easy:66% train-turret:31%
+21:03:02 [turret]   0.90 M     4331 st/s  win 52.2% draw  4.2%  ep 24.1s  ent 5.43  kl 0.0065  vloss 0.039  ev 0.47  shaping 0.70  train-turret-easy:67% train-turret:36%
+21:03:11 [turret]   0.94 M     4340 st/s  win 53.5% draw  2.5%  ep 19.1s  ent 5.24  kl 0.0076  vloss 0.055  ev 0.43  shaping 0.69  train-turret-easy:68% train-turret:39%
+21:03:20 [turret]   0.98 M     4348 st/s  win 53.8% draw  1.2%  ep 16.8s  ent 5.48  kl 0.0058  vloss 0.032  ev 0.46  shaping 0.68  train-turret-easy:66% train-turret:42%
+21:03:29 [turret]   1.02 M     4352 st/s  win 56.8% draw  2.0%  ep 19.0s  ent 5.36  kl 0.0069  vloss 0.029  ev 0.57  shaping 0.66  train-turret-easy:68% train-turret:48%
+21:03:39 [turret]   1.06 M     4341 st/s  win 57.8% draw  2.8%  ep 18.6s  ent 5.33  kl 0.0066  vloss 0.054  ev 0.30  shaping 0.65  train-turret-easy:72% train-turret:44%
+21:03:49 [turret]   1.11 M     4340 st/s  win 54.2% draw  1.2%  ep 16.4s  ent 5.46  kl 0.0069  vloss 0.048  ev 0.23  shaping 0.63  train-turret-easy:65% train-turret:45%
+21:03:59 [turret]   1.15 M     4333 st/s  win 51.2% draw  0.8%  ep 18.5s  ent 5.72  kl 0.0055  vloss 0.029  ev 0.24  shaping 0.62  train-turret-easy:58% train-turret:46%
+21:04:08 [turret]   1.19 M     4332 st/s  win 44.8% draw  9.2%  ep 23.7s  ent 5.86  kl 0.0058  vloss 0.008  ev 0.34  shaping 0.61  train-turret-easy:52% train-turret:38%
+21:04:17 [turret]   1.23 M     4343 st/s  win 41.8% draw 20.2%  ep 30.0s  ent 5.76  kl 0.0053  vloss 0.016  ev 0.31  shaping 0.59  train-turret-easy:48% train-turret:36%
+21:04:26 [turret]   1.27 M     4341 st/s  win 45.0% draw 24.5%  ep 31.1s  ent 5.12  kl 0.0065  vloss 0.059  ev 0.27  shaping 0.58  train-turret-easy:54% train-turret:36%
+21:04:36 [turret]   1.31 M     4331 st/s  win 52.2% draw  0.2%  ep 13.0s  ent 4.97  kl 0.0067  vloss 0.072  ev 0.26  shaping 0.57  train-turret-easy:66% train-turret:38%
+21:04:47 [turret]   1.35 M     4317 st/s  win 59.2% draw  0.0%  ep 12.7s  ent 5.11  kl 0.0062  vloss 0.064  ev 0.28  shaping 0.55  train-turret-easy:72% train-turret:46%
+21:04:49 stage turret passed: win rate 60.0% ≥ 60% at 1.36 M steps
+21:04:49 done: checkpoints in /tmp/claude-0/-home-user-iso-knight/1288a417-01f7-579c-9587-111f8d82faba/scratchpad/runs/turret1
