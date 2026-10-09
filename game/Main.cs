@@ -8,10 +8,8 @@ using Squad.Sim;
 public partial class Main : Node3D
 {
     const double Dt = 1.0 / 30;
-    const float TracerLife = 0.12f, HitLife = 0.35f;
 
-    static readonly Color[] TeamCol = { new("4fa8ff"), new("ff6a55") };
-    static readonly Color[] TeamDark = { new("1d4f85"), new("85301f") };
+    internal static readonly Color[] TeamCol = { new("4fa8ff"), new("ff6a55") };
 
     // what to play
     string _simDir = "";
@@ -22,22 +20,40 @@ public partial class Main : Node3D
 
     // the match
     BotRunner? _runner;
-    Match? _m;
+    Match? _m;                 // read on this thread only for what never changes: world, balance, team sizes
+    SimFeed? _feed;            // the match itself runs ahead on a worker thread
+    SimFeed.Frame _now = new(); // the newest tick shown
     string _title = "";
     SoldierTruth[] _prev = Array.Empty<SoldierTruth>(), _cur = Array.Empty<SoldierTruth>();
     double _acc, _speed = 1, _overFor;
-    bool _paused, _labels = true, _cones = true, _auto = true, _cut;
-    readonly List<(MeshInstance3D mesh, float h)> _tallWalls = new();  // cut down to waist height with H
-    readonly List<(Vector3 a, Vector3 b, double t)> _tracers = new();
-    readonly List<(Vector3 p, double t)> _hits = new();
+    bool _paused, _debug, _labels = true, _cones = true, _auto = true, _cut;
+    int[] _shotsSeen = Array.Empty<int>();
+    MapView? _map;
+    Fx _fx = null!;
+    Ragdoll.Collider[] _walls = Array.Empty<Ragdoll.Collider>();
+    readonly Dictionary<int, Queue<double>> _fired = new();   // per shooter: times of shots whose bullet is still flying
+    readonly Dictionary<int, (Vector3 point, Vector3 dir, HitZone zone)> _lastHit = new();
 
     // scene
     Node3D? _worldRoot;
     SoldierView[] _soldiers = Array.Empty<SoldierView>();
-    MeshInstance3D _fx = null!, _coneMesh = null!;
-    ImmediateMesh _fxMesh = null!, _coneIm = null!;
-    StandardMaterial3D _fxMat = null!, _coneMat = null!;
+    MeshInstance3D _coneMesh = null!;
+    ImmediateMesh _coneIm = null!;
+    StandardMaterial3D _coneMat = null!;
     Camera3D _cam = null!;
+    Godot.Environment _env = null!;
+    DirectionalLight3D _sun = null!;
+    internal static readonly Color Bg = new("20251f");
+    DirectionalLight3D _skyLight = null!, _rim = null!;
+    // ambient (ground colour), sky light from above, sun, rim, exposure; --light a,k,s,r,e overrides them for fitting
+    static readonly float[] Light = { 2.03f, 0.32f, 0.73f, 0.43f, 1.03f };
+    float[]? _lightArg;
+
+    void ApplyLight(float[] l)
+    {
+        _env.AmbientLightEnergy = l[0]; _skyLight.LightEnergy = l[1]; _sun.LightEnergy = l[2]; _rim.LightEnergy = l[3];
+        _env.TonemapExposure = l[4];
+    }
     Vector3 _target;
     float _camYaw = Mathf.Pi / 4, _camPitch = Mathf.DegToRad(30), _zoom = 30;
     float? _zoomArg;
@@ -49,6 +65,23 @@ public partial class Main : Node3D
     readonly List<double> _shots = new();
     string _shotDir = "";
     int _shotPending = -1;
+    bool _shotsMode;
+    // --bench [seconds]: play the match in real time without vsync, then print frames per second (mean and 1 % low)
+    bool _bench;
+    double _benchFor = 60, _benchT;
+    readonly List<double> _frameMs = new();
+    ulong _lastTick;
+    readonly System.Diagnostics.Stopwatch _sw = new();
+    double _tSol, _tFx, _tMap, _sumSol, _sumFx, _sumMap;
+    float? _camYawArg;
+
+    public override void _ExitTree()
+    {
+        _feed?.Dispose();
+        Sfx.Current = null; Sfx.Locate = null;
+        if (SoldierView.ProbeFeet) GD.Print($"feet: planted-foot travel {SoldierView.SlipSum:0.000} m over {SoldierView.BodySum:0.0} m of body travel ({100 * SoldierView.SlipSum / Math.Max(1e-9, SoldierView.BodySum):0.00}%)");
+        Art.Clear(); Sling.ClearMaterials(); SoldierView.ClearMaterials(); MapView.ClearMaterials();
+    }
 
     public override void _Ready()
     {
@@ -68,7 +101,13 @@ public partial class Main : Node3D
                 case "--zoom": _zoomArg = float.Parse(next, System.Globalization.CultureInfo.InvariantCulture); i++; break;
                 case "--follow": _follow = int.Parse(next); i++; break;
                 case "--cut": _cut = true; break;
+                case "--showcase": _show = next; i++; break;
+                case "--cam-yaw": _camYawArg = Mathf.DegToRad(float.Parse(next, System.Globalization.CultureInfo.InvariantCulture)); i++; break;
+                case "--probe-feet": SoldierView.ProbeFeet = true; break;
+                case "--bench": _bench = true; if (double.TryParse(next, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var bs)) { _benchFor = bs; i++; } break;
+                case "--light": _lightArg = next.Split(',').Select(x => float.Parse(x, System.Globalization.CultureInfo.InvariantCulture)).ToArray(); i++; break;
                 case "--shots":
+                    _shotsMode = true;
                     foreach (var s in next.Split(',')) _shots.Add(double.Parse(s, System.Globalization.CultureInfo.InvariantCulture));
                     i++; break;
             }
@@ -80,7 +119,19 @@ public partial class Main : Node3D
         _scenarioIdx = Math.Max(0, Array.FindIndex(_scenarios, p => Path.GetFileNameWithoutExtension(p) == want || Path.GetFullPath(p) == Path.GetFullPath(want)));
 
         BuildStatic();
-        StartMatch();
+        // procedural sound (sfx.js); none in --shots runs, which may have no audio device
+        if (!_shotsMode)
+        {
+            Sfx.Current = new Sfx(this);
+            Sfx.Locate = p =>
+            {
+                // louder near the camera's centre; pan by the position on screen
+                float d = new Vector2(p.X - _target.X, p.Z - _target.Z).Length();
+                float x = _cam.IsPositionBehind(p) ? 0 : _cam.UnprojectPosition(p).X / GetViewport().GetVisibleRect().Size.X * 2 - 1;
+                return (Math.Clamp(x * 0.8f, -1, 1), 1 / (1 + d * 0.07f));
+            };
+        }
+        if (_show != null) StartShowcase(); else StartMatch();
     }
 
     // ───────────────────────── match lifecycle ─────────────────────────
@@ -88,26 +139,30 @@ public partial class Main : Node3D
     void StartMatch()
     {
         _error = "";
-        _tracers.Clear(); _hits.Clear();
+        _fx.Clear(); _fired.Clear(); _lastHit.Clear();
         _acc = 0; _overFor = 0;
         if (_scenarios.Length == 0) { _error = "no scenarios in " + _simDir; return; }
         try
         {
             var sc = Scenario.Load(_scenarios[_scenarioIdx]);
+            _feed?.Dispose(); _feed = null;
             _runner = sc.Build(_seed).CreateRunner();
             _m = _runner.Match;
             _title = $"{sc.Name}  seed {_seed}";
         }
         catch (Exception e)
         {
-            _runner = null; _m = null;
+            _runner = null; _m = null; _feed?.Dispose(); _feed = null;
             _error = e.Message;
             GD.PushError(e.ToString());
             return;
         }
         _prev = new SoldierTruth[_m.Count];
+        _shotsSeen = new int[_m.Count];
         _cur = new SoldierTruth[_m.Count];
-        for (int i = 0; i < _m.Count; i++) _prev[i] = _cur[i] = _m.Truth(i);
+        _feed = new SimFeed(_runner);
+        _now = _feed.First;
+        for (int i = 0; i < _m.Count; i++) _prev[i] = _cur[i] = _now.Truth[i];
         BuildWorld(_m.World);
         ApplyCut();
         BuildSoldiers(_m);
@@ -116,42 +171,121 @@ public partial class Main : Node3D
         if (_follow >= _m.Count) _follow = -1;
     }
 
-    void StepSim()
+    /// <summary>Take the next tick from the worker; false when it is not ready yet.</summary>
+    bool StepSim(bool wait = false)
     {
         var m = _m!;
+        if (_feed!.Error is { } err) { _error = err.Message; GD.PushError(err.ToString()); }
+        var f = _feed.Next(wait || _shotsMode);
+        if (f == null) return false;
+        _now = f;
         (_prev, _cur) = (_cur, _prev);
-        _runner!.Step();
-        for (int i = 0; i < m.Count; i++) _cur[i] = m.Truth(i);
-        foreach (var e in m.Events)
+        for (int i = 0; i < m.Count; i++) _cur[i] = f.Truth[i];
+        // a shot leaves the muzzle in the tick the shooter's counter goes up; its Shot event comes when the bullet stops
+        for (int i = 0; i < m.Count; i++)
         {
-            if (e.Type == EventType.Shot)
-                _tracers.Add((W(e.Pos, e.H), W(e.Pos2, e.H2), m.Time));
-            else if (e.Type == EventType.Hit)
-                _hits.Add((W(e.Pos, e.H > 0 ? e.H : 1.2), m.Time));
+            int n = f.Shots[i];
+            if (n > _shotsSeen[i])
+            {
+                _soldiers[i].Shot = true;
+                if (!_fired.TryGetValue(i, out var q)) _fired[i] = q = new Queue<double>();
+                q.Enqueue(f.Time);
+            }
+            _shotsSeen[i] = n;
         }
-        _tracers.RemoveAll(t => m.Time - t.t > TracerLife);
-        _hits.RemoveAll(h => m.Time - h.t > HitLife);
+        foreach (var e in f.Events)
+        {
+            switch (e.Type)
+            {
+                case EventType.Shot: OnShot(e, f.Time); break;
+                case EventType.Hit:
+                {
+                    var dir = new Vector3((float)e.Pos2.X, 0, (float)e.Pos2.Y);
+                    var at = W(e.Pos, e.H);
+                    _soldiers[e.Other].Flinch = (dir, at, e.Zone);
+                    _lastHit[e.Other] = (at, dir, e.Zone);
+                    break;
+                }
+                case EventType.Kill:
+                    if (_lastHit.TryGetValue(e.Other, out var h)) _soldiers[e.Other].Killed = h;
+                    break;
+                case EventType.ReloadStart:
+                    _soldiers[e.Agent].ReloadEmpty = e.Value > 0;
+                    break;
+                case EventType.DryFire:
+                    Sfx.At(_soldiers[e.Agent].Root.Position, (s, p, v) => s.Dry(p, v));
+                    break;
+            }
+        }
+        return true;
+    }
+
+    /// <summary>A bullet stopped: a tracer from the drawn muzzle to that point, and what it hit reacts when it arrives.</summary>
+    void OnShot(in GameEvent e, double now)
+    {
+        double fired = _fired.TryGetValue(e.Agent, out var q) && q.Count > 0 ? q.Dequeue() : now;
+        var shooter = _soldiers[e.Agent];
+        var from = shooter.Dead || shooter.MuzzleW == Vector3.Zero ? W(e.Pos, e.H) : shooter.MuzzleW;
+        var end = W(e.Pos2, e.H2);
+        var dir = (end - from).Normalized();
+        var surf = e.Surface;
+        if (surf == Surface.Air) { _fx.Tracer(from, end, (float)(now - fired), null); return; }
+        var (kind, normal) = ImpactAt(e.Pos2, e.H2, surf, dir);
+        _fx.Tracer(from, end, (float)(now - fired), () =>
+        {
+            if (surf == Surface.Soldier) _fx.Blood(end, dir, 1);
+            else _fx.Impact(kind, end, normal, dir);
+            Sfx.At(end, (s, p, v) => s.Impact(surf == Surface.Soldier ? "flesh" : kind, p, v));
+        });
+    }
+
+    /// <summary>What a bullet hit and the surface normal there: the nearest obstacle of that kind (they are capsules).</summary>
+    (string kind, Vector3 normal) ImpactAt(Vec2 p, double h, Surface s, Vector3 dir)
+    {
+        if (s is Surface.Ground or Surface.Soldier or Surface.None or Surface.Air) return ("dirt", Vector3.Up);
+        var want = s switch { Surface.HighWall => ObstacleKind.HighWall, Surface.LowWall => ObstacleKind.LowWall, Surface.Crate => ObstacleKind.Crate, _ => ObstacleKind.Tree };
+        Obstacle best = default; double bd = double.MaxValue; Vec2 bq = p; int bi = -1;
+        var obs = _m!.World.Obstacles;
+        for (int i = 0; i < obs.Length; i++)
+        {
+            var o = obs[i];
+            if (o.Kind != want) continue;
+            var ab = o.B - o.A; double L2 = ab.LengthSq;
+            double t = L2 > 0 ? Math.Clamp((p - o.A).Dot(ab) / L2, 0, 1) : 0;
+            var c = o.A + ab * t; double d = Vec2.Distance(p, c) - o.R;
+            if (Math.Abs(d) < bd) { bd = Math.Abs(d); best = o; bq = c; bi = i; }
+        }
+        string kind = bi >= 0 && _map?.Kinds[bi] is { } k ? k : "concrete";
+        if (h >= best.H - 0.03) return (kind, Vector3.Up);
+        var n = new Vector3((float)(p.X - bq.X), 0, (float)(p.Y - bq.Y));
+        return (kind, n.LengthSquared() > 1e-8f ? n.Normalized() : new Vector3(-dir.X, 0, -dir.Z).Normalized());
     }
 
     public override void _Process(double delta)
     {
         if (_shotPending >= 0) { SaveShot(); return; }
+        if (_bench) BenchFrame();
+        Sfx.Current?.Mix();
+        // frames for --shots advance by a fixed 1/60 s, so they do not depend on how fast this machine renders
+        if (_shotsMode) delta = 1.0 / 60;
         HandleCameraKeys((float)delta);
+        if (_show != null) { ProcessShowcase(delta); return; }
 
         if (_m != null)
         {
-            if (!_paused && !_m.Over)
+            if (!_paused && !_now.Over)
             {
                 _acc += delta * _speed;
                 int steps = 0;
-                while (_acc >= Dt && !_m.Over && steps++ < 400)
+                while (_acc >= Dt && !_now.Over && steps++ < 400)
                 {
-                    StepSim();
+                    bool got = StepSim();
+                    if (!got) { _acc = Math.Min(_acc, Dt); break; }   // the worker is behind: hold the last tick
                     _acc -= Dt;
-                    if (_shots.Count > 0 && _m.Time >= _shots[0]) { _shots.RemoveAt(0); _shotPending = 2; _acc = 0; break; }
+                    if (_shots.Count > 0 && _now.Time >= _shots[0]) { _shots.RemoveAt(0); _shotPending = 2; _acc = 0; break; }
                 }
             }
-            if (_m.Over)
+            if (_now.Over)
             {
                 _overFor += delta;
                 if (_shots.Count > 0) { _shots.Clear(); _shotPending = 2; }
@@ -159,15 +293,43 @@ public partial class Main : Node3D
             }
         }
 
-        float alpha = _m == null || _m.Over || _paused ? 1 : (float)Math.Clamp(_acc / Dt, 0, 1);
+        float alpha = _m == null || _now.Over || _paused ? 1 : (float)Math.Clamp(_acc / Dt, 0, 1);
         UpdateCamera(alpha);
         if (_m != null)
         {
-            for (int i = 0; i < _soldiers.Length; i++) _soldiers[i].Update(_prev[i], _cur[i], alpha, (float)delta, _cam, _labels);
-            DrawFx();
+            float simDt = _paused || _now.Over ? 0 : (float)(delta * _speed);
+            _sw.Restart();
+            for (int i = 0; i < _soldiers.Length; i++) _soldiers[i].Update(_prev[i], _cur[i], alpha, simDt, _cam, _debug && _labels);
+            _tSol = _sw.Elapsed.TotalMilliseconds; _sw.Restart();
+            _fx.Update(simDt);
+            _tFx = _sw.Elapsed.TotalMilliseconds; _sw.Restart();
+            UpdateMap(simDt);
+            _tMap = _sw.Elapsed.TotalMilliseconds;
             DrawCones(alpha);
         }
         UpdateHud();
+    }
+
+    void BenchFrame()
+    {
+        ulong now = Time.GetTicksUsec();
+        if (_lastTick == 0) { DisplayServer.WindowSetVsyncMode(DisplayServer.VSyncMode.Disabled); _lastTick = now; return; }
+        double ms = (now - _lastTick) / 1000.0; _lastTick = now;
+        if (_benchT > 2) { _sumSol += _tSol; _sumFx += _tFx; _sumMap += _tMap; }
+        _benchT += ms / 1000;
+        if (_benchT > 2) _frameMs.Add(ms);   // the first two seconds warm up shaders and caches
+        if (_benchT < _benchFor + 2 && !_now.Over) return;
+        var sorted = _frameMs.OrderByDescending(x => x).ToList();
+        int n1 = Math.Max(1, sorted.Count / 100);
+        double mean = 1000 * sorted.Count / sorted.Sum(), low = 1000 * n1 / sorted.Take(n1).Sum();
+        var vp = GetViewport().GetVisibleRect().Size;
+        GD.Print($"bench {_title}: {sorted.Count} frames over {sorted.Sum() / 1000:0.0} s at {vp.X}x{vp.Y}, " +
+                 $"mean {mean:0.0} fps, 1% low {low:0.0} fps, worst frame {sorted[0]:0.0} ms, grass {_map?.GrassCount}, " +
+                 $"{RenderingServer.GetRenderingInfo(RenderingServer.RenderingInfo.TotalDrawCallsInFrame)} draw calls, " +
+                 $"{RenderingServer.GetRenderingInfo(RenderingServer.RenderingInfo.TotalPrimitivesInFrame) / 1000} k primitives; " +
+                 $"CPU per frame: soldiers {_sumSol / sorted.Count:0.00} ms, effects {_sumFx / sorted.Count:0.00} ms, map {_sumMap / sorted.Count:0.00} ms (the match runs on its own thread)" +
+                 (Sfx.Current is { } sfx ? $"; sound peak {sfx.Peak:0.00}, up to {sfx.MaxVoices} voices" : ""));
+        GetTree().Quit();
     }
 
     void SaveShot()
@@ -177,7 +339,10 @@ public partial class Main : Node3D
         _shotPending = -1;
         string dir = string.IsNullOrEmpty(_shotDir) ? Path.Combine(_simDir, "out", "godot") : Path.GetFullPath(_shotDir, Path.Combine(_simDir, ".."));
         Directory.CreateDirectory(dir);
-        string path = Path.Combine(dir, $"{Path.GetFileNameWithoutExtension(_scenarios[_scenarioIdx])}-{_seed}-t{_m!.Time.ToString("000.0", System.Globalization.CultureInfo.InvariantCulture)}.png");
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        string path = Path.Combine(dir, _show != null
+            ? $"show-{_show}-t{_showT.ToString("0.00", inv)}.png"
+            : $"{Path.GetFileNameWithoutExtension(_scenarios[_scenarioIdx])}-{_seed}-t{_now.Time.ToString("000.0", inv)}.png");
         GetViewport().GetTexture().GetImage().SavePng(path);
         GD.Print("shot " + path);
         if (_shots.Count == 0) GetTree().Quit();
@@ -192,13 +357,15 @@ public partial class Main : Node3D
             switch (k.Keycode)
             {
                 case Key.Space: _paused = !_paused; break;
-                case Key.Period: if (_m != null && !_m.Over) { StepSim(); _acc = 0; _paused = true; } break;
+                case Key.Period: if (_m != null && !_now.Over) { StepSim(true); _acc = 0; _paused = true; } break;
                 case Key.Equal or Key.KpAdd: _speed = Math.Min(16, _speed * 2); break;
                 case Key.Minus or Key.KpSubtract: _speed = Math.Max(0.125, _speed / 2); break;
                 case Key.R: StartMatch(); break;
                 case Key.N: _seed++; StartMatch(); break;
                 case Key.Bracketright: _scenarioIdx = (_scenarioIdx + 1) % Math.Max(1, _scenarios.Length); StartMatch(); break;
                 case Key.Bracketleft: _scenarioIdx = (_scenarioIdx + _scenarios.Length - 1) % Math.Max(1, _scenarios.Length); StartMatch(); break;
+                case Key.Tab: _debug = !_debug; break;
+                case Key.M: if (Sfx.Current != null) Sfx.Current.Enabled = !Sfx.Current.Enabled; break;
                 case Key.L: _labels = !_labels; break;
                 case Key.F: FollowNext(k.ShiftPressed ? -1 : 1); break;
                 case Key.G: _follow = -1; break;
@@ -261,52 +428,60 @@ public partial class Main : Node3D
         if (_follow >= 0 && _m != null)
         {
             var p = _prev[_follow].Pos + (_cur[_follow].Pos - _prev[_follow].Pos) * alpha;
-            _target = _target.Lerp(W(p, 0.8), 0.25f);
+            _target = _target.Lerp(W(p, 0.9), _shotsMode ? 1 : 0.25f);
         }
         var off = new Vector3(Mathf.Sin(_camYaw) * Mathf.Cos(_camPitch), Mathf.Sin(_camPitch), Mathf.Cos(_camYaw) * Mathf.Cos(_camPitch));
         _cam.Size = _zoom;
-        _cam.LookAtFromPosition(_target + off * 120, _target, Vector3.Up);
+        // as close as the bottom edge of the view allows (an ortho ray there meets the ground 1.73·size/2 nearer),
+        // so the single directional shadow split covers as little depth as possible
+        float dist = 20 + _zoom * 1.2f;
+        _cam.Far = dist * 2 + 40;
+        _sun.DirectionalShadowMaxDistance = dist + _zoom * 1.2f;
+        _cam.LookAtFromPosition(_target + off * dist, _target, Vector3.Up);
     }
 
     // ───────────────────────── static scene ─────────────────────────
 
     void BuildStatic()
     {
-        var env = new Godot.Environment
+        // Light as on the concept's firing range (soldier-main.js): a hemisphere light (sky dfe7d5 over ground 4d4639),
+        // a warm sun with soft shadows from (−6, 10, 3), a cool rim light from (4, 5, −6), ACES filmic. The compatibility
+        // renderer has no hemisphere light and ignores the energy of sky ambient, so the hemisphere is the ground colour
+        // as ambient plus a shadowless sky-coloured light from straight above. The energies are fitted to the concept's
+        // frames of the same soldier (Light below), not converted from three.js units: the two engines differ there.
+        _env = new Godot.Environment
         {
             BackgroundMode = Godot.Environment.BGMode.Color,
-            BackgroundColor = new Color("15181300"),
+            BackgroundColor = Bg,
             AmbientLightSource = Godot.Environment.AmbientSource.Color,
-            AmbientLightColor = new Color("c8d0e0"),
-            AmbientLightEnergy = 0.45f,
+            AmbientLightColor = new Color("4d4639"),
+            ReflectedLightSource = Godot.Environment.ReflectionSource.Disabled,
+            TonemapMode = Godot.Environment.ToneMapper.Aces,
         };
-        AddChild(new WorldEnvironment { Environment = env });
-        var sun = new DirectionalLight3D
+        AddChild(new WorldEnvironment { Environment = _env });
+        _skyLight = new DirectionalLight3D { LightColor = new Color("dfe7d5"), LightSpecular = 0.3f };
+        AddChild(_skyLight);
+        _skyLight.LookAtFromPosition(new Vector3(0, 1, 0.001f), Vector3.Zero, Vector3.Up);
+        _sun = new DirectionalLight3D
         {
-            RotationDegrees = new Vector3(-55, 35, 0),
-            LightEnergy = 1.1f,
-            LightColor = new Color("fff3dc"),
+            LightColor = new Color("ffe8bf"),
             ShadowEnabled = true,
+            ShadowBias = 0.02f,
+            ShadowNormalBias = 1.0f,
+            ShadowBlur = 1.5f,
+            DirectionalShadowMode = DirectionalLight3D.ShadowMode.Orthogonal,
         };
-        sun.DirectionalShadowMode = DirectionalLight3D.ShadowMode.Orthogonal;
-        sun.DirectionalShadowMaxDistance = 220;
-        sun.ShadowBias = 0.03f;
-        AddChild(sun);
+        AddChild(_sun);
+        _sun.LookAtFromPosition(new Vector3(-6, 10, 3), Vector3.Zero, Vector3.Up);
+        _rim = new DirectionalLight3D { LightColor = new Color("acc3ca") };
+        AddChild(_rim);
+        _rim.LookAtFromPosition(new Vector3(4, 5, -6), Vector3.Zero, Vector3.Up);
+        ApplyLight(_lightArg ?? Light);
 
         _cam = new Camera3D { Projection = Camera3D.ProjectionType.Orthogonal, Near = 1, Far = 500, Current = true };
         AddChild(_cam);
 
-        _fxMesh = new ImmediateMesh();
-        _fxMat = new StandardMaterial3D
-        {
-            ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
-            VertexColorUseAsAlbedo = true,
-            Transparency = BaseMaterial3D.TransparencyEnum.Alpha,
-            CullMode = BaseMaterial3D.CullModeEnum.Disabled,
-        };
-        _fx = new MeshInstance3D { Mesh = _fxMesh, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
-        AddChild(_fx);
-
+        _fx = new Fx(this);
         _coneIm = new ImmediateMesh();
         _coneMat = new StandardMaterial3D
         {
@@ -358,101 +533,36 @@ public partial class Main : Node3D
         _worldRoot?.QueueFree();
         _worldRoot = new Node3D { Name = "World" };
         AddChild(_worldRoot);
-        float ww = (float)w.Width, wh = (float)w.Height;
-
-        _tallWalls.Clear();
-        MeshInstance3D Add(Mesh mesh, Material mat, Vector3 pos, float yaw = 0, bool shadow = true)
+        _walls = w.Obstacles.Where(o => o.Solid).Select(o => new Ragdoll.Collider
         {
-            var mi = new MeshInstance3D
-            {
-                Mesh = mesh, MaterialOverride = mat, Position = pos, Rotation = new Vector3(0, yaw, 0),
-                CastShadow = shadow ? GeometryInstance3D.ShadowCastingSetting.On : GeometryInstance3D.ShadowCastingSetting.Off,
-            };
-            _worldRoot!.AddChild(mi);
-            return mi;
-        }
-
-        // ground: the playable field and a darker apron around it
-        Add(new PlaneMesh { Size = new Vector2(ww + 40, wh + 40) }, Mat(new Color("20251d")), new Vector3(ww / 2, -0.02f, wh / 2), 0, false);
-        Add(new PlaneMesh { Size = new Vector2(ww, wh) }, Mat(new Color("3a4232")), new Vector3(ww / 2, 0, wh / 2), 0, false);
-
-        // 5 m grid
-        var grid = new ImmediateMesh();
-        grid.SurfaceBegin(Mesh.PrimitiveType.Lines);
-        grid.SurfaceSetColor(new Color(1, 1, 1, 0.06f));
-        for (int x = 5; x < ww; x += 5) { grid.SurfaceAddVertex(new Vector3(x, 0.01f, 0)); grid.SurfaceAddVertex(new Vector3(x, 0.01f, wh)); }
-        for (int y = 5; y < wh; y += 5) { grid.SurfaceAddVertex(new Vector3(0, 0.01f, y)); grid.SurfaceAddVertex(new Vector3(ww, 0.01f, y)); }
-        grid.SurfaceEnd();
-        Add(grid, _coneMat, Vector3.Zero, 0, false);
-
-        for (int t = 0; t < w.Map.Spawns.Count && t < 2; t++)
-        {
-            var z = w.Map.Spawns[t];
-            var size = new Vector2((float)(z.Max.X - z.Min.X), (float)(z.Max.Y - z.Min.Y));
-            var c = TeamCol[t]; c.A = 0.16f;
-            var mat = Mat(c); mat.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
-            Add(new PlaneMesh { Size = size }, mat, W(z.Center, 0.015), 0, false);
-        }
+            Ax = (float)o.A.X, Az = (float)o.A.Y, Bx = (float)o.B.X, Bz = (float)o.B.Y, R = (float)o.R, H = (float)o.H,
+        }).ToArray();
+        _map = new MapView(w, _worldRoot, _seed);
+        // objective zones of the rules: a faint painted ring
         foreach (var z in w.Map.Zones)
         {
-            var mat = Mat(new Color(0.95f, 0.8f, 0.25f, 0.3f)); mat.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
-            Add(new CylinderMesh { TopRadius = (float)z.Radius, BottomRadius = (float)z.Radius, Height = 0.03f, RadialSegments = 48 }, mat, W(z.Center, 0.02), 0, false);
-        }
-
-        var highWall = Mat(new Color("d8d2c0"));
-        var lowWall = Mat(new Color("b09358"));
-        var crate = Mat(new Color("8f5e2e"));
-        var bush = Mat(new Color(0.31f, 0.6f, 0.24f, 0.78f));
-        var trunk = Mat(new Color("5a3d22"));
-        var leaves = Mat(new Color(0.17f, 0.4f, 0.15f, 0.82f));
-
-        foreach (var o in w.Obstacles)
-        {
-            var d = o.B - o.A;
-            double len = d.Length;
-            float h = (float)o.H, r = (float)o.R;
-            var mid = (o.A + o.B) * 0.5;
-            float yaw = len > 1e-6 ? (float)Math.Atan2(d.X, d.Y) : 0;
-            switch (o.Kind)
+            var mat = Mat(new Color(0.95f, 0.8f, 0.25f, 0.22f)); mat.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
+            _worldRoot.AddChild(new MeshInstance3D
             {
-                case ObstacleKind.HighWall:
-                    _tallWalls.Add((Add(new BoxMesh { Size = new Vector3(2 * r, h, (float)len + 2 * r) }, highWall, W(mid, h / 2), yaw), h));
-                    break;
-                case ObstacleKind.LowWall:
-                    Add(new BoxMesh { Size = new Vector3(2 * r, h, (float)len + 2 * r) }, lowWall, W(mid, h / 2), yaw);
-                    break;
-                case ObstacleKind.Crate:
-                    Add(new BoxMesh { Size = new Vector3(2 * r, h, (float)len + 2 * r) }, crate, W(mid, h / 2), yaw);
-                    break;
-                case ObstacleKind.Bush:
-                {
-                    // a capsule of foliage: blobs along the segment
-                    int n = Math.Max(1, (int)Math.Ceiling(len / r) + 1);
-                    for (int k = 0; k < n; k++)
-                    {
-                        var p = n == 1 ? mid : o.A + d * ((double)k / (n - 1));
-                        Add(new SphereMesh { Radius = r, Height = h * 1.1f, RadialSegments = 12, Rings = 6 }, bush, W(p, h * 0.5f));
-                    }
-                    break;
-                }
-                case ObstacleKind.Tree:
-                    Add(new CylinderMesh { TopRadius = r * 0.7f, BottomRadius = r, Height = h * 0.7f, RadialSegments = 8 }, trunk, W(mid, h * 0.35f));
-                    Add(new SphereMesh { Radius = 1.2f, Height = 1.9f, RadialSegments = 12, Rings = 6 }, leaves, W(mid, h * 0.82f));
-                    break;
-            }
+                Mesh = new CylinderMesh { TopRadius = (float)z.Radius, BottomRadius = (float)z.Radius, Height = 0.02f, RadialSegments = 48 },
+                MaterialOverride = mat, Position = W(z.Center, 0.012), CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
+            });
         }
     }
 
-    void ApplyCut()
+    float _time;
+    Vector3 _mapOffset;
+    readonly List<Vector3> _alive = new();
+    void UpdateMap(float dt)
     {
-        // cosmetic only: the simulation still treats them as 2.5 m walls
-        foreach (var (mesh, h) in _tallWalls)
-        {
-            float k = _cut ? 0.9f / h : 1;
-            mesh.Scale = new Vector3(1, k, 1);
-            mesh.Position = new Vector3(mesh.Position.X, h * k / 2, mesh.Position.Z);
-        }
+        if (_map == null) return;
+        _time += dt;
+        _alive.Clear();
+        foreach (var s in _soldiers) if (!s.Dead) _alive.Add(s.Root.Position - _mapOffset);
+        _map.Update(_time, dt, _camYaw, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(_alive), _cut);
     }
+
+    void ApplyCut() => _map?.ApplyCut(_cut);   // cosmetic only: the simulation still treats them as 2.5 m walls
 
     void BuildSoldiers(Match m)
     {
@@ -461,51 +571,16 @@ public partial class Main : Node3D
         for (int i = 0; i < m.Count; i++)
         {
             var t = m.Truth(i);
-            _soldiers[i] = new SoldierView(i, _runner!.Brains[i], m.B.Damage.Hp, Mat(TeamCol[t.Team], 0.7f), Mat(TeamDark[t.Team]), _worldRoot!, _overlay);
+            _soldiers[i] = new SoldierView(i, t.Team, _runner!.Brains[i], m.B.Damage.Hp, _worldRoot!, _overlay, _fx, _walls);
         }
     }
 
     // ───────────────────────── per-frame effects ─────────────────────────
 
-    void DrawFx()
-    {
-        var m = _m!;
-        _fxMesh.ClearSurfaces();
-        if (_tracers.Count == 0 && _hits.Count == 0) return;
-        var camDir = -_cam.GlobalBasis.Z;
-        _fxMesh.SurfaceBegin(Mesh.PrimitiveType.Triangles, _fxMat);
-        foreach (var (a, b, t) in _tracers)
-        {
-            float k = 1 - (float)((m.Time - t) / TracerLife);
-            var side = (b - a).Cross(camDir).Normalized() * Math.Max(0.02f, _zoom * 0.0016f);
-            Quad(a - side, a + side, b + side, b - side, new Color(1, 0.95f, 0.6f, 0.95f * k), new Color(1, 0.9f, 0.5f, 0.15f * k));
-        }
-        float hs = Math.Max(0.12f, _zoom * 0.005f);
-        var up = _cam.GlobalBasis.Y * hs; var right = _cam.GlobalBasis.X * hs;
-        foreach (var (p, t) in _hits)
-        {
-            float k = 1 - (float)((m.Time - t) / HitLife);
-            var c = new Color(1, 0.2f, 0.15f, k);
-            float s = 1 + (1 - k) * 1.5f;
-            Quad(p - right * s, p + up * s, p + right * s, p - up * s, c, c);
-        }
-        _fxMesh.SurfaceEnd();
-    }
-
-    void Quad(Vector3 a, Vector3 b, Vector3 c, Vector3 d, Color ca, Color cc)
-    {
-        _fxMesh.SurfaceSetColor(ca); _fxMesh.SurfaceAddVertex(a);
-        _fxMesh.SurfaceSetColor(ca); _fxMesh.SurfaceAddVertex(b);
-        _fxMesh.SurfaceSetColor(cc); _fxMesh.SurfaceAddVertex(c);
-        _fxMesh.SurfaceSetColor(ca); _fxMesh.SurfaceAddVertex(a);
-        _fxMesh.SurfaceSetColor(cc); _fxMesh.SurfaceAddVertex(c);
-        _fxMesh.SurfaceSetColor(cc); _fxMesh.SurfaceAddVertex(d);
-    }
-
     void DrawCones(float alpha)
     {
         _coneIm.ClearSurfaces();
-        if (!_cones) return;
+        if (!_cones || !_debug) return;
         var m = _m!;
         float half = (float)m.B.Perception.ConeHalf, range = (float)Math.Min(m.B.Perception.ViewRange, 12);
         const int seg = 14;
@@ -533,110 +608,17 @@ public partial class Main : Node3D
     void UpdateHud()
     {
         if (_m == null) { _hud.Text = _error.Length > 0 ? "Error: " + _error : "no match"; _banner.Text = ""; return; }
-        var m = _m;
+        var m = _m; var f = _now;
         string state = _paused ? "  PAUSED" : "";
         _hud.Text =
             $"{_title}    [{_scenarioIdx + 1}/{_scenarios.Length}]\n" +
-            $"t = {m.Time:0.0} s    blue {m.AliveCount(0)}/{m.TeamSize(0)}    red {m.AliveCount(1)}/{m.TeamSize(1)}    speed ×{_speed:0.###}{state}\n" +
-            "Space pause · . step · +/- speed · R restart · N next seed · [ ] scenario · L labels · C cones · H cut walls · Shift+A autoplay " + (_auto ? "on" : "off") + "\n" +
-            "WASD / RMB drag pan · Q/E rotate · wheel zoom · F / Shift+F follow soldier · G free camera" + (_follow >= 0 ? $"    following {_follow}" : "");
-        _banner.Text = m.Over
-            ? (m.Result.Winner < 0 ? "DRAW" : m.Result.Winner == 0 ? "BLUE WINS" : "RED WINS") + $"  ({m.Result.Reason}, {m.Time:0.0} s)"
+            $"t = {f.Time:0.0} s    blue {f.Alive[0]}/{m.TeamSize(0)}    red {f.Alive[1]}/{m.TeamSize(1)}    speed ×{_speed:0.###}{state}" +
+            (_debug ? "\n" : "    Tab debug") + (!_debug ? "" :
+            "Tab debug off · Space pause · . step · +/- speed · R restart · N next seed · [ ] scenario · L labels · C cones · H cut walls · M sound · Shift+A autoplay " + (_auto ? "on" : "off") + "\n" +
+            "WASD / RMB drag pan · Q/E rotate · wheel zoom · F / Shift+F follow soldier · G free camera") + (_follow >= 0 ? $"    following {_follow}" : "");
+        _banner.Text = f.Over
+            ? (f.Result.Winner < 0 ? "DRAW" : f.Result.Winner == 0 ? "BLUE WINS" : "RED WINS") + $"  ({f.Result.Reason}, {f.Time:0.0} s)"
             : "";
-        _banner.AddThemeColorOverride("font_color", m.Over && m.Result.Winner >= 0 ? TeamCol[m.Result.Winner].Lightened(0.3f) : Colors.White);
-    }
-}
-
-/// <summary>One soldier: a capsule body that sinks when crouching, a head that turns with the aim, a rifle that is
-/// lowered or raised, and a 2D label with strategy, intent and health drawn over the 3D view.</summary>
-sealed class SoldierView
-{
-    const float StandH = 1.5f, CrouchH = 0.85f;
-    readonly Node3D _root, _body, _torso, _look, _gun;
-    readonly MeshInstance3D _torsoMesh;
-    readonly Label _label;
-    readonly ColorRect _hpBg, _hpFill;
-    readonly IBrain? _brain;
-    readonly string _name;
-    readonly double _maxHp;
-    readonly StandardMaterial3D _deadMat;
-    float _fall;
-
-    public SoldierView(int id, IBrain? brain, double maxHp, StandardMaterial3D team, StandardMaterial3D dark, Node3D parent, Control overlay)
-    {
-        _brain = brain; _maxHp = maxHp;
-        _name = $"{id} {brain?.Name ?? ""}";
-        _deadMat = new StandardMaterial3D { AlbedoColor = dark.AlbedoColor.Darkened(0.35f), Roughness = 1 };
-
-        _root = new Node3D(); parent.AddChild(_root);
-        _body = new Node3D(); _root.AddChild(_body);
-        _torso = new Node3D(); _body.AddChild(_torso);
-        _torsoMesh = new MeshInstance3D { Mesh = new CapsuleMesh { Radius = 0.24f, Height = 1, RadialSegments = 12, Rings = 4 }, MaterialOverride = team, Position = new Vector3(0, 0.5f, 0) };
-        _torso.AddChild(_torsoMesh);
-
-        _look = new Node3D(); _body.AddChild(_look);
-        _look.AddChild(new MeshInstance3D { Mesh = new SphereMesh { Radius = 0.15f, Height = 0.3f, RadialSegments = 12, Rings = 6 }, MaterialOverride = dark });
-        // visor: shows where he looks
-        _look.AddChild(new MeshInstance3D { Mesh = new BoxMesh { Size = new Vector3(0.2f, 0.07f, 0.08f) }, MaterialOverride = new StandardMaterial3D { AlbedoColor = new Color("e8e4d0") }, Position = new Vector3(0, 0.02f, 0.13f) });
-
-        _gun = new Node3D(); _body.AddChild(_gun);
-        _gun.AddChild(new MeshInstance3D { Mesh = new BoxMesh { Size = new Vector3(0.07f, 0.1f, 0.9f) }, MaterialOverride = new StandardMaterial3D { AlbedoColor = new Color("2b2b2b"), Roughness = 0.6f }, Position = new Vector3(0, 0, 0.35f) });
-
-        _label = Main.MakeLabel(12);
-        _label.AddThemeColorOverride("font_color", team.AlbedoColor.Lightened(0.45f));
-        _hpBg = new ColorRect { Color = new Color(0, 0, 0, 0.6f), Size = new Vector2(34, 4), MouseFilter = Control.MouseFilterEnum.Ignore };
-        _hpFill = new ColorRect { Size = new Vector2(34, 4), MouseFilter = Control.MouseFilterEnum.Ignore };
-        overlay.AddChild(_hpBg); overlay.AddChild(_hpFill); overlay.AddChild(_label);
-    }
-
-    public void Free()
-    {
-        _label.QueueFree(); _hpBg.QueueFree(); _hpFill.QueueFree();
-        // 3D nodes go away with the world root
-    }
-
-    public void Update(in SoldierTruth a, in SoldierTruth b, float t, float dt, Camera3D cam, bool labels)
-    {
-        var pos = a.Pos + (b.Pos - a.Pos) * t;
-        float yaw = Mathf.LerpAngle((float)a.Yaw, (float)b.Yaw, t);
-        float aimYaw = Mathf.LerpAngle((float)a.AimYaw, (float)b.AimYaw, t);
-        float crouch = Mathf.Lerp((float)a.Crouch, (float)b.Crouch, t);
-        float raise = Mathf.Lerp((float)a.Raise, (float)b.Raise, t);
-        float pitch = Mathf.Lerp((float)a.AimPitch, (float)b.AimPitch, t);
-
-        _root.Position = new Vector3((float)pos.X, 0, (float)pos.Y);
-        _root.Rotation = new Vector3(0, yaw, 0);
-        float h = Mathf.Lerp(StandH, CrouchH, Math.Clamp(crouch, 0, 1));
-        _torso.Scale = new Vector3(1, h, 1);
-        _look.Position = new Vector3(0, h + 0.13f, 0);
-        _look.Rotation = new Vector3(0, aimYaw - yaw, 0);
-        _gun.Position = new Vector3(-0.2f, h - 0.17f, 0.05f);
-        // lowered rifle points down and ahead; raised it follows the aim
-        _gun.Rotation = new Vector3(Mathf.Lerp(0.75f, -pitch, Math.Clamp(raise, 0, 1)), aimYaw - yaw, 0);
-
-        if (!b.Alive)
-        {
-            if (_fall == 0) { _torsoMesh.MaterialOverride = _deadMat; _gun.Visible = false; }
-            _fall = Math.Min(1, _fall + dt * 3);
-            _body.Rotation = new Vector3(Mathf.Pi / 2 * _fall * _fall, 0, 0);
-            _body.Position = new Vector3(0, 0.15f * _fall, 0);
-            _label.Visible = _hpBg.Visible = _hpFill.Visible = false;
-            return;
-        }
-        if (_fall != 0) { _fall = 0; _body.Rotation = Vector3.Zero; _body.Position = Vector3.Zero; _gun.Visible = true; }
-
-        var head = _root.Position + new Vector3(0, h + 0.5f, 0);
-        bool show = labels && !cam.IsPositionBehind(head);
-        _label.Visible = _hpBg.Visible = _hpFill.Visible = show;
-        if (!show) return;
-        var sp = cam.UnprojectPosition(head);
-        string intent = _brain?.Intent ?? "";
-        _label.Text = $"{_name} {intent}{(b.Reloading ? " ⟳" : "")}";
-        _label.Position = sp + new Vector2(-_label.Size.X / 2, -22);
-        _hpBg.Position = sp + new Vector2(-17, -4);
-        float frac = (float)Math.Clamp(b.Hp / _maxHp, 0, 1);
-        _hpFill.Position = _hpBg.Position;
-        _hpFill.Size = new Vector2(34 * frac, 4);
-        _hpFill.Color = frac > 0.5f ? new Color("7cd65a") : frac > 0.25f ? new Color("e8c547") : new Color("e04a3a");
+        _banner.AddThemeColorOverride("font_color", f.Over && f.Result.Winner >= 0 ? TeamCol[f.Result.Winner].Lightened(0.3f) : Colors.White);
     }
 }

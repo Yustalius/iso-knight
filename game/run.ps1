@@ -4,6 +4,8 @@
 #   powershell -File game\run.ps1 -Godot C:\path\Godot.exe
 # Viewer options: --scenario <name or path> --seed N --speed X --zoom M --follow i --cut
 #                 --shots 5,20 [--shot-dir dir]  (save PNG frames at these sim times and quit)
+#                 --bench [seconds]  (play without vsync, print mean and 1% low fps, quit)
+#                 --showcase stand|aim|crouch|walk|run|sneak|reload|tactical|fire|kill|turn|yard  (close-ups, no match)
 # No param() block on purpose: PowerShell would swallow the viewer's "--" options.
 $ErrorActionPreference = 'Stop'
 $godot = 'D:\tools\godot\Godot_v4.7.2-stable_mono_win64\Godot_v4.7.2-stable_mono_win64.exe'
