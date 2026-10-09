@@ -141,6 +141,31 @@ def cmd_start(a):
     print(f"{name} is running in {pod}")
 
 
+def cmd_readout(a):
+    """A pod without GPU on our volume, to read and fetch results after a job has ended. Delete it with `stop`."""
+    q = quota()
+    c_used, c_hard = q.get("requests.cpu", ("0", "4"))
+    if cpu(c_used) + 1 > cpu(c_hard):
+        raise SystemExit(f"requests.cpu {c_used}/{c_hard}: no room even for a 1-CPU pod — wait")
+    name = f"{PREFIX}readout-{time.strftime('%m%d-%H%M')}"
+    spec = job_spec(name, "readout", "-", "-", 0, a.hours, {})
+    spec["spec"]["backoffLimit"] = 0
+    pod = spec["spec"]["template"]["spec"]
+    c = pod["containers"][0]
+    c["command"] = ["sleep", str(int(a.hours * 3600))]
+    c["resources"] = {"requests": {"cpu": "1", "memory": "2Gi"}, "limits": {"cpu": "2", "memory": "4Gi"}}
+    c["volumeMounts"][0]["readOnly"] = True
+    pod["volumes"][0]["persistentVolumeClaim"]["readOnly"] = True
+    print(kube.apply(spec))
+    for _ in range(60):
+        pods = [p for p in kube.get_json("pods", "-l", f"job-name={name}")["items"] if p["status"].get("phase") == "Running"]
+        if pods:
+            print(f"{name}: {pods[0]['metadata']['name']} is running; `stop {name}` when done")
+            return
+        time.sleep(5)
+    raise SystemExit(f"{name}: not running after 5 min — check `status`")
+
+
 def cmd_push(a):
     """Upload the bundle a job waits for (when the upload in `start` was cut off)."""
     job = kube.get_json("job", a.job)
@@ -175,6 +200,9 @@ def main():
     s.add_argument("--name", default=None)
     s.add_argument("--env", nargs="*", default=[], help="KEY=VALUE for the entry script (THREADS_A, RUN_A, ...)")
     s.set_defaults(fn=cmd_start)
+    s = sub.add_parser("readout")
+    s.add_argument("--hours", type=float, default=2)
+    s.set_defaults(fn=cmd_readout)
     s = sub.add_parser("push")
     s.add_argument("job")
     s.set_defaults(fn=cmd_push)

@@ -189,22 +189,34 @@ def upload(pod, local, remote, chunk=1 << 20, attempts=5, log=print):
     return whole
 
 
-def download(pod, remote, local, chunk=20000, log=print):
+def download(pod, remote, local, chunk=32000, log=print):
     """Fetch a file from the pod in base64 slices small enough for the proxy, then check its SHA-256."""
     info = sh(pod, f"stat -c %s '{remote}' && sha256sum '{remote}' | cut -c1-64").split()
     size, whole = int(info[0]), info[1]
     raw_chunk = chunk * 3 // 4
     out = bytearray()
+    failures = 0
     while len(out) < size:
         off = len(out)
-        text = sh(pod, f"tail -c +{off + 1} '{remote}' | head -c {raw_chunk} | base64 -w0; echo; "
-                       f"tail -c +{off + 1} '{remote}' | head -c {raw_chunk} | sha256sum | cut -c1-64")
-        payload, digest = text.strip().split("\n")
-        piece = base64.b64decode(payload)
-        if hashlib.sha256(piece).hexdigest() != digest.strip():
-            log(f"slice at {off}: hash mismatch, retrying")
+        try:
+            text = sh(pod, f"tail -c +{off + 1} '{remote}' | head -c {raw_chunk} | base64 -w0; echo; "
+                           f"tail -c +{off + 1} '{remote}' | head -c {raw_chunk} | sha256sum | cut -c1-64")
+            payload, digest = text.strip().split("\n")
+            piece = base64.b64decode(payload)
+            ok = hashlib.sha256(piece).hexdigest() == digest.strip()
+        except (ValueError, KubeError) as e:   # an answer cut short by the tunnel
+            ok, e_text = False, str(e)
+        else:
+            e_text = "hash mismatch"
+        if not ok:
+            failures += 1
+            if failures > 10:
+                raise KubeError(f"download of {remote}: 10 broken slices in a row")
+            log(f"slice at {off}: {e_text[:80]}, retrying")
+            time.sleep(min(10, failures))
             continue
         out += piece
+        failures = 0
         if size > 4 * raw_chunk and (len(out) // raw_chunk) % 20 == 0:
             log(f"  {remote}: {len(out) * 100 // size}%")
     if hashlib.sha256(out).hexdigest() != whole:
