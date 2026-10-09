@@ -81,7 +81,7 @@ python train/tests/smoke.py              # формы, NaN, детерминиз
 python train/train.py --config train/configs/curriculum-1v1.json --device cuda:0 --run runs/c1
 ```
 
-**Две T4.** Сеть маленькая, GPU не узкое место, узкое место — ядра CPU под симуляцию. Поэтому запускать два независимых обучения:
+**Две T4.** План для нашего кластера — [`train-t4.md`](train-t4.md). Сеть маленькая, GPU не узкое место, узкое место — ядра CPU под симуляцию. Поэтому запускать два независимых обучения:
 
 ```sh
 python train/train.py --config train/configs/curriculum-1v1.json --device cuda:0 --seed 1 --threads 8 --run runs/a &
