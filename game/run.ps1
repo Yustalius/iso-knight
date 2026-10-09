@@ -2,7 +2,8 @@
 #   powershell -File game\run.ps1                                   # team-4v4-mixed, seed 1
 #   powershell -File game\run.ps1 --scenario big-10v10 --seed 4 --speed 2
 #   powershell -File game\run.ps1 -Godot C:\path\Godot.exe
-# Viewer options: --scenario <name or path> --seed N --speed X --zoom M --follow i --cut
+#   powershell -File game\run.ps1 --replay sim\out\replays         # recorded matches (train\eval.py --record), N: next
+# Viewer options: --scenario <name or path> --seed N --replay <file.rpl or folder> --speed X --zoom M --follow i --cut
 #                 --shots 5,20 [--shot-dir dir]  (save PNG frames at these sim times and quit)
 #                 --bench [seconds]  (play without vsync, print mean and 1% low fps, quit)
 #                 --showcase stand|aim|crouch|walk|run|sneak|reload|tactical|fire|kill|turn|yard  (close-ups, no match)

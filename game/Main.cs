@@ -17,6 +17,9 @@ public partial class Main : Node3D
     int _scenarioIdx;
     ulong _seed = 1;
     string _error = "";
+    // --replay file.rpl or a folder of them: recorded matches (e.g. the trained network's, eval.py --record) instead of live bots
+    string[] _replays = Array.Empty<string>();
+    int _replayIdx;
 
     // the match
     BotRunner? _runner;
@@ -95,6 +98,11 @@ public partial class Main : Node3D
             {
                 case "--sim": _simDir = Path.GetFullPath(next); i++; break;
                 case "--scenario": scenarioArg = next; i++; break;
+                case "--replay":
+                    _replays = Directory.Exists(next)
+                        ? Directory.GetFiles(next, "*.rpl", SearchOption.AllDirectories).OrderBy(p => p, StringComparer.Ordinal).ToArray()
+                        : new[] { Path.GetFullPath(next) };
+                    i++; break;
                 case "--seed": _seed = ulong.Parse(next); i++; break;
                 case "--speed": _speed = double.Parse(next, System.Globalization.CultureInfo.InvariantCulture); i++; break;
                 case "--shot-dir": _shotDir = next; i++; break;
@@ -144,11 +152,24 @@ public partial class Main : Node3D
         if (_scenarios.Length == 0) { _error = "no scenarios in " + _simDir; return; }
         try
         {
-            var sc = Scenario.Load(_scenarios[_scenarioIdx]);
             _feed?.Dispose(); _feed = null;
-            _runner = sc.Build(_seed).CreateRunner();
-            _m = _runner.Match;
-            _title = $"{sc.Name}  seed {_seed}";
+            if (_replays.Length > 0)
+            {
+                string path = _replays[_replayIdx];
+                var rp = Replay.Load(path);
+                var m = Match.Create(SimJson.ReadConfig(rp.Header));
+                int tick = 0;
+                _runner = null; _m = m;
+                _title = $"replay {Path.GetFileNameWithoutExtension(Path.GetDirectoryName(path))}/{Path.GetFileName(path)}  (blue: recorded learner)";
+                _feed = new SimFeed(m, () => { if (tick >= rp.Ticks.Count) return false; m.Step(rp.Ticks[tick++]); return true; });
+            }
+            else
+            {
+                var sc = Scenario.Load(_scenarios[_scenarioIdx]);
+                _runner = sc.Build(_seed).CreateRunner();
+                _m = _runner.Match;
+                _title = $"{sc.Name}  seed {_seed}";
+            }
         }
         catch (Exception e)
         {
@@ -160,7 +181,7 @@ public partial class Main : Node3D
         _prev = new SoldierTruth[_m.Count];
         _shotsSeen = new int[_m.Count];
         _cur = new SoldierTruth[_m.Count];
-        _feed = new SimFeed(_runner);
+        _feed ??= new SimFeed(_runner!);
         _now = _feed.First;
         for (int i = 0; i < _m.Count; i++) _prev[i] = _cur[i] = _now.Truth[i];
         BuildWorld(_m.World);
@@ -169,6 +190,13 @@ public partial class Main : Node3D
         _target = new Vector3((float)_m.World.Width / 2, 0, (float)_m.World.Height / 2);
         _zoom = _zoomArg ?? (float)Math.Max(_m.World.Width, _m.World.Height) * 0.7f;
         if (_follow >= _m.Count) _follow = -1;
+    }
+
+    /// <summary>The next seed of the scenario, or the next recorded match.</summary>
+    void NextMatch()
+    {
+        if (_replays.Length > 0) _replayIdx = (_replayIdx + 1) % _replays.Length; else _seed++;
+        StartMatch();
     }
 
     /// <summary>Take the next tick from the worker; false when it is not ready yet.</summary>
@@ -289,7 +317,7 @@ public partial class Main : Node3D
             {
                 _overFor += delta;
                 if (_shots.Count > 0) { _shots.Clear(); _shotPending = 2; }
-                else if (_auto && !_paused && _overFor > 5) { _seed++; StartMatch(); }
+                else if (_auto && !_paused && _overFor > 5) NextMatch();
             }
         }
 
@@ -342,7 +370,9 @@ public partial class Main : Node3D
         var inv = System.Globalization.CultureInfo.InvariantCulture;
         string path = Path.Combine(dir, _show != null
             ? $"show-{_show}-t{_showT.ToString("0.00", inv)}.png"
-            : $"{Path.GetFileNameWithoutExtension(_scenarios[_scenarioIdx])}-{_seed}-t{_now.Time.ToString("000.0", inv)}.png");
+            : (_replays.Length > 0
+                ? $"{Path.GetFileName(Path.GetDirectoryName(_replays[_replayIdx]))}-{Path.GetFileNameWithoutExtension(_replays[_replayIdx])}"
+                : $"{Path.GetFileNameWithoutExtension(_scenarios[_scenarioIdx])}-{_seed}") + $"-t{_now.Time.ToString("000.0", inv)}.png");
         GetViewport().GetTexture().GetImage().SavePng(path);
         GD.Print("shot " + path);
         if (_shots.Count == 0) GetTree().Quit();
@@ -361,7 +391,7 @@ public partial class Main : Node3D
                 case Key.Equal or Key.KpAdd: _speed = Math.Min(16, _speed * 2); break;
                 case Key.Minus or Key.KpSubtract: _speed = Math.Max(0.125, _speed / 2); break;
                 case Key.R: StartMatch(); break;
-                case Key.N: _seed++; StartMatch(); break;
+                case Key.N: NextMatch(); break;
                 case Key.Bracketright: _scenarioIdx = (_scenarioIdx + 1) % Math.Max(1, _scenarios.Length); StartMatch(); break;
                 case Key.Bracketleft: _scenarioIdx = (_scenarioIdx + _scenarios.Length - 1) % Math.Max(1, _scenarios.Length); StartMatch(); break;
                 case Key.Tab: _debug = !_debug; break;
@@ -571,7 +601,7 @@ public partial class Main : Node3D
         for (int i = 0; i < m.Count; i++)
         {
             var t = m.Truth(i);
-            _soldiers[i] = new SoldierView(i, t.Team, _runner!.Brains[i], m.B.Damage.Hp, _worldRoot!, _overlay, _fx, _walls);
+            _soldiers[i] = new SoldierView(i, t.Team, _runner?.Brains[i], m.B.Damage.Hp, _worldRoot!, _overlay, _fx, _walls);
         }
     }
 
@@ -611,7 +641,7 @@ public partial class Main : Node3D
         var m = _m; var f = _now;
         string state = _paused ? "  PAUSED" : "";
         _hud.Text =
-            $"{_title}    [{_scenarioIdx + 1}/{_scenarios.Length}]\n" +
+            $"{_title}    [{(_replays.Length > 0 ? $"{_replayIdx + 1}/{_replays.Length}" : $"{_scenarioIdx + 1}/{_scenarios.Length}")}]\n" +
             $"t = {f.Time:0.0} s    blue {f.Alive[0]}/{m.TeamSize(0)}    red {f.Alive[1]}/{m.TeamSize(1)}    speed ×{_speed:0.###}{state}" +
             (_debug ? "\n" : "    Tab debug") + (!_debug ? "" :
             "Tab debug off · Space pause · . step · +/- speed · R restart · N next seed · [ ] scenario · L labels · C cones · H cut walls · M sound · Shift+A autoplay " + (_auto ? "on" : "off") + "\n" +

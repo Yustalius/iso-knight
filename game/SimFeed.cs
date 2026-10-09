@@ -4,7 +4,8 @@ using Squad.Sim;
 /// <summary>Runs the match on a worker thread a few ticks ahead of the picture. The bots' thinking costs up to tens of
 /// milliseconds in some ticks; done on the render thread that showed as dropped frames. The viewer only reads the
 /// snapshots (truth, events, shot counters) this produces; the match itself is touched by the worker alone, except for
-/// immutable parts (world, balance, team sizes). The result is the same match: the simulation does not depend on timing.</summary>
+/// immutable parts (world, balance, team sizes). The result is the same match: the simulation does not depend on timing.
+/// The step is the bots' (BotRunner.Step) or a replay's recorded actions; it returns false when there is nothing more.</summary>
 sealed class SimFeed : IDisposable
 {
     public sealed class Frame
@@ -19,16 +20,18 @@ sealed class SimFeed : IDisposable
     }
 
     const int Ahead = 8;   // ticks computed in advance (0.27 s)
-    readonly BotRunner _runner;
+    readonly Func<bool> _step;
     readonly Match _m;
     readonly Queue<Frame> _q = new();
     readonly Thread _thread;
     volatile bool _stop;
     public Exception? Error { get; private set; }
 
-    public SimFeed(BotRunner runner)
+    public SimFeed(BotRunner runner) : this(runner.Match, () => { runner.Step(); return true; }) { }
+
+    public SimFeed(Match m, Func<bool> step)
     {
-        _runner = runner; _m = runner.Match;
+        _step = step; _m = m;
         First = Capture(false);
         _thread = new Thread(Run) { IsBackground = true, Name = "SimFeed" };
         _thread.Start();
@@ -54,7 +57,7 @@ sealed class SimFeed : IDisposable
             {
                 lock (_q) { while (_q.Count >= Ahead && !_stop) Monitor.Wait(_q); }
                 if (_stop) break;
-                _runner.Step();
+                if (!_step()) break;
                 var f = Capture(true);
                 lock (_q) { _q.Enqueue(f); Monitor.PulseAll(_q); }
             }
